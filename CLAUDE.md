@@ -33,4 +33,4 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   3. ✅ Querschnitt: JSON-Logs auf stderr, Fehler als Problem Details (RFC 9457), `/healthz`, `/readyz`
   4. ✅ Endpunkte: CRUD, Filter/Sortierung/Paging, `POST /api/tickets/{id}/close`, Optimistic Locking, OpenAPI
   5. ✅ Fixtures (Foundry, ca. 200 Tickets)
-  6. PHPUnit-API-Tests gegen echte Postgres, PHPStan, PHP-CS-Fixer, `make test`
+  6. ✅ PHPUnit-API-Tests gegen echte Postgres, PHPStan, PHP-CS-Fixer, `make test`

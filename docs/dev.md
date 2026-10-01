@@ -96,6 +96,22 @@ Logs: `symfony server:log` (folgt dem Log, Abbruch mit Strg+C). Stoppen: `symfon
 
 Fehler unter `/api` kommen als Problem Details (RFC 9457) mit `Content-Type: application/problem+json`.
 
+## Tests und Checks
+
+```bash
+make test             # alles; geht auf dem Host und im Devcontainer
+cd backend && composer check   # dasselbe direkt: cs + phpstan + test
+composer cs-fix       # Code-Style automatisch korrigieren
+```
+
+- Die API-Tests laufen gegen eine eigene Postgres-DB **`app_test`** (Doctrine hängt im Test-Env
+  `_test` an den DB-Namen). Foundry baut sie bei jedem Testlauf frisch auf, und zwar über die
+  echten Migrationen. Fehlt also eine Migration, schlagen die Tests fehl.
+- Jeder Test läuft in einer Transaktion, die DAMA danach zurückrollt: Tests sehen sich gegenseitig
+  nicht, und die Test-DB bleibt leer. Die Dev-DB `app` wird nie angefasst.
+- Testdaten erzeugen die Tests selbst mit `TicketFactory`, statt auf die Fixtures zu bauen.
+  So steht im Test, wovon er abhängt.
+
 ## Claude Code im Devcontainer
 
 Claude Code ist über das Feature `ghcr.io/anthropics/devcontainer-features/claude-code` im Image

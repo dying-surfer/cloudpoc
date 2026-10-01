@@ -58,6 +58,13 @@
         "symfony/polyfill-php81": "*",
         "symfony/polyfill-php82": "*"
     },
+    "scripts-descriptions": {
+        "cs": "Check code style (PHP-CS-Fixer, dry run)",
+        "cs-fix": "Fix code style",
+        "phpstan": "Static analysis",
+        "test": "PHPUnit tests against the Postgres test DB",
+        "check": "cs + phpstan + test (what CI runs)"
+    },
     "scripts": {
         "auto-scripts": {
             "cache:clear": "symfony-cmd",
@@ -68,6 +75,15 @@
         ],
         "post-update-cmd": [
             "@auto-scripts"
+        ],
+        "cs": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix",
+        "phpstan": "phpstan analyse --no-progress --memory-limit=1G",
+        "test": "phpunit",
+        "check": [
+            "@cs",
+            "@phpstan",
+            "@test"
         ]
     },
     "conflict": {

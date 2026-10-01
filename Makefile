@@ -31,10 +31,27 @@ dev-down: ## Devcontainer stoppen und entfernen (DB-Inhalt ist danach weg)
 	@$(DEV_COMPOSE) down
 
 # --- Backend (läuft im Devcontainer) -----------------------------------------
+# Auf dem Host (mit podman) laufen die Befehle per `exec` im Devcontainer, sonst
+# (im Devcontainer selbst, später in CI) direkt im Ordner backend/.
 
+ifneq ($(shell command -v podman 2>/dev/null),)
 BACKEND = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/backend workspace
+else
+BACKEND = cd backend &&
+endif
 
-.PHONY: backend-install
+.PHONY: backend-install backend-check backend-fixtures test
 
 backend-install: ## Composer-Abhängigkeiten des Backends installieren
 	@$(BACKEND) composer install
+
+backend-fixtures: ## Dev-DB migrieren und mit 200 Demo-Tickets füllen (löscht alle Daten)
+	@$(BACKEND) php bin/console doctrine:migrations:migrate -n
+	@$(BACKEND) php bin/console doctrine:fixtures:load -n
+
+backend-check: ## Backend: Code-Style, PHPStan, PHPUnit (gegen die Test-DB)
+	@$(BACKEND) composer check
+
+# --- Alles ---------------------------------------------------------------------
+
+test: backend-check ## Alle Checks und Tests (später auch Frontend)

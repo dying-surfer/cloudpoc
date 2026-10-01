@@ -9,4 +9,15 @@ when@dev: &dev
             # Fixed seed: every load produces the same tickets (dates relative to today).
             seed: 1234
 
-when@test: *dev
+when@test:
+    zenstruck_foundry:
+        persistence:
+            flush_once: true
+        faker:
+            locale: de_DE
+            seed: 1234
+        orm:
+            reset:
+                # Build the test DB by running the real migrations (not from the mapping),
+                # so the tests also prove that the migrations are complete.
+                mode: migrate
