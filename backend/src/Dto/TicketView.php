@@ -7,6 +7,7 @@ namespace App\Dto;
 use App\Entity\Ticket;
 use App\Enum\TicketPriority;
 use App\Enum\TicketStatus;
+use OpenApi\Attributes as OA;
 
 /**
  * JSON representation of a ticket. Kept separate from the entity so the API
@@ -21,11 +22,11 @@ final readonly class TicketView
         public TicketStatus $status,
         public TicketPriority $priority,
         public ?string $assignee,
-        /** YYYY-MM-DD */
+        #[OA\Property(format: 'date')]
         public ?string $dueDate,
-        /** RFC 3339 */
+        #[OA\Property(format: 'date-time')]
         public string $createdAt,
-        /** RFC 3339 */
+        #[OA\Property(format: 'date-time')]
         public string $updatedAt,
         /** Send this back on PUT (optimistic locking). */
         public int $version,

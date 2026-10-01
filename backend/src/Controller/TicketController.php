@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Dto\TicketInput;
 use App\Dto\TicketListQuery;
 use App\Dto\TicketPage;
+use App\Dto\TicketUpdateInput;
 use App\Dto\TicketView;
 use App\Entity\Ticket;
 use App\Repository\TicketRepository;
@@ -81,8 +82,8 @@ final class TicketController extends AbstractController
     #[OA\Response(response: 422, description: 'Invalid request body (Problem Details with violations)')]
     public function update(
         Uuid $id,
-        #[MapRequestPayload(validationGroups: ['Default', 'update'])]
-        TicketInput $input,
+        #[MapRequestPayload]
+        TicketUpdateInput $input,
     ): JsonResponse {
         $ticket = $this->findOr404($id);
 
@@ -129,10 +130,10 @@ final class TicketController extends AbstractController
         $ticket
             ->setTitle($input->title)
             ->setDescription($input->description)
-            ->setStatus($input->status)
-            ->setPriority($input->priority)
+            ->setStatus($input->statusEnum())
+            ->setPriority($input->priorityEnum())
             ->setAssignee($input->assignee)
-            ->setDueDate($input->dueDate);
+            ->setDueDate($input->dueDateObject());
     }
 
     private function findOr404(Uuid $id): Ticket
