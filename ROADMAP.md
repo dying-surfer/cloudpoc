@@ -1,0 +1,144 @@
+# cloudpoc – Roadmap
+
+Ein bewusst langweiliges Ticket-CRUD (Tabelle, Filter, Detailformular) als Vehikel, um
+PHP + Angular + Postgres „cloud-native“ zu entwickeln, zu testen und zu betreiben:
+Devcontainer mit Wegwerf-DB → mehrere Stagings → Prod mit persistenter, gesicherter DB.
+Zielplattformen reichen vom Homeserver bis Azure.
+
+## Entscheidungen
+
+| Thema           | Wahl                                                                    |
+|-----------------|-------------------------------------------------------------------------|
+| Backend         | Symfony 7.4 LTS, PHP 8.4, Doctrine ORM + Migrations, FrankenPHP         |
+| Frontend        | Angular (aktuell), Standalone Components, Signals, Angular Material     |
+| Datenbank       | PostgreSQL 17                                                           |
+| API             | JSON, REST-Stil, RPC-Endpunkte nach Bedarf, Fehler als RFC 9457         |
+| CI/CD, Registry | GitHub Actions + GHCR                                                   |
+| Deployment      | Option A: Compose (Homeserver) · Option B: Helm/Kubernetes (k3s, AKS)   |
+| Container lokal | Podman (Docker-kompatibel)                                              |
+
+## Leitprinzipien
+
+- **12-Factor**: Konfiguration per Env-Vars, Logs als JSON auf stdout, stateless Container.
+- **Build once, deploy many**: dasselbe Image (Tag = Git-SHA) läuft in Staging und Prod;
+  das Frontend lädt seine Runtime-Config aus `/config.json`.
+- **Migrationen als eigener Job** statt beim App-Start, immer rückwärtskompatibel (expand/contract).
+- **Same-Origin**: Ein Reverse Proxy leitet `/` ans Frontend und `/api` ans Backend weiter, deshalb ist kein CORS nötig.
+- **Health-Endpoints**: `/healthz` (Liveness), `/readyz` (Readiness inkl. DB).
+- **Keine echten Prod-Daten in Dev**: nur anonymisierte Dumps.
+- **Secrets nie im Repo**.
+
+## Zielstruktur
+
+```
+.devcontainer/          Devcontainer (workspace + postgres)
+backend/                Symfony
+frontend/               Angular
+deploy/compose/         Compose-Stack (prod-like, Stagings, Homeserver)
+deploy/helm/cloudpoc/   Helm-Chart + values je Umgebung
+infra/azure/            Terraform
+db/                     reset / seed / dump / import / anonymize
+.github/workflows/      CI + Deployments
+docs/                   Doku je Umgebung, ADRs
+Makefile                einheitliche Entry-Points
+```
+
+---
+
+## Meilensteine
+
+### M1 – Repo-Skeleton & Devcontainer
+- [ ] Ordnerstruktur, `Makefile`, `.editorconfig`, `.gitignore`
+- [ ] `.devcontainer/` mit dem Service `workspace` (PHP 8.4, Composer, Symfony CLI, Node LTS, psql) und dem Service `db` (postgres:17, **ohne Volume**, also eine Wegwerf-DB)
+- [ ] Podman-Hinweise in `docs/dev.md` (`dev.containers.dockerPath: podman`, Podman-Socket)
+
+**Fertig, wenn:** Der Devcontainer startet und `psql` die DB erreicht.
+
+### M2 – Backend: Ticket-API
+- [ ] Symfony-Skeleton + Doctrine, Migrations, Serializer, Validator, Monolog (JSON), NelmioApiDoc
+- [ ] Entity `Ticket`: `id` (UUIDv7), `title`, `description`, `status` (open/in_progress/done),
+      `priority` (low/medium/high), `assignee`, `dueDate`, `createdAt`, `updatedAt`, `version`
+- [ ] Endpunkte:
+  - `GET /api/tickets?q=&status=&priority=&assignee=&dueBefore=&sort=&page=&pageSize=`
+  - `GET|PUT|DELETE /api/tickets/{id}`, `POST /api/tickets`
+  - RPC: `POST /api/tickets/{id}/close`
+  - `/healthz`, `/readyz`, OpenAPI unter `/api/doc`
+- [ ] Problem Details (RFC 9457), Optimistic Locking über `version`
+- [ ] Fixtures (Foundry, ca. 200 Tickets)
+- [ ] PHPUnit (API-Tests gegen echte Postgres), PHPStan, PHP-CS-Fixer
+
+**Fertig, wenn:** `make test` grün ist und `curl /api/tickets?status=open` sinnvolle Daten liefert.
+
+### M3 – Frontend: Liste, Filter, Detail
+- [ ] Angular-App mit Material, `/tickets` als Tabelle mit Paginator, Sortierung und Filterleiste
+      (Filter in den Query-Params, serverseitig ausgewertet)
+- [ ] `/tickets/new` und `/tickets/:id` als Reactive Form mit Speichern, Löschen (mit Bestätigung) und Schließen
+- [ ] `TicketApiService`, Interceptor für Problem Details (Snackbar)
+- [ ] Runtime-Config über `/config.json` (z. B. Umgebungs-Banner)
+- [ ] `proxy.conf.json` für `ng serve`, Unit-Tests
+
+**Fertig, wenn:** CRUD und Filter im Browser gegen das lokale Backend funktionieren.
+
+### M4 – Prod-Images & lokaler Compose-Stack
+- [ ] Backend-Dockerfile (FrankenPHP, Multi-Stage, `--no-dev`, Opcache, non-root)
+- [ ] Frontend-Dockerfile (Node-Build → nginx-unprivileged, SPA-Fallback)
+- [ ] `deploy/compose/compose.yaml` mit Reverse Proxy, frontend, backend, migrate (one-shot) und
+      postgres (benanntes Volume)
+- [ ] DB-Skripte: `make db-reset`, `db-dump`, `db-import FILE=…`, `db/anonymize.sql`
+- [ ] Playwright-Smoke-Test gegen den Stack
+
+**Fertig, wenn:** `podman compose up` die App bereitstellt und die Daten ein `down`/`up` überleben.
+
+### M5 – CI mit GitHub Actions + GHCR
+- [ ] GitHub-Remote anlegen
+- [ ] `ci.yml` für PRs und Pushes: Lint, PHPStan, PHPUnit (Postgres-Service), Angular-Lint/Test/Build,
+      Image-Build mit Cache, Trivy-Scan, Playwright-Smoke
+- [ ] Push der Images nach GHCR (`:sha`, `:main`)
+- [ ] Dependabot/Renovate
+
+**Fertig, wenn:** Ein PR grün durchläuft und die Images in GHCR liegen.
+
+### M6 – Homeserver: Stagings & Prod via Compose
+- [ ] Traefik/Caddy mit TLS, Routing per Host (`<name>.staging.example.com`, `app.example.com`)
+- [ ] **Mehrere Stagings**: ein Compose-Projekt pro Staging (`-p staging-<name>`), jeweils mit eigener DB
+- [ ] `make staging-reset ENV=<name>` (drop, migrate, seed)
+- [ ] Prod: persistentes Volume, `restart: unless-stopped`, Backups (pg_dump/pgBackRest) mit
+      Offsite-Kopie (restic → S3/B2)
+- [ ] Workflows: `deploy-staging.yml` (main → default-Staging, dispatch → benanntes Staging),
+      `deploy-prod.yml` (Tag `v*`, gleiches Image, Approval), `reset-staging.yml`
+- [ ] Doku `docs/homeserver.md` (SSH- vs. Self-hosted-Runner, Podman Quadlets als Alternative)
+
+**Fertig, wenn:** Zwei Stagings parallel laufen, der Reset nur eines davon betrifft und ein Restore-Test gelingt.
+
+### M7 – Kubernetes: Helm-Chart & k3s
+- [ ] Helm-Chart: Deployments, Services, Ingress, ConfigMap (`config.json`), Migrations-Job als
+      `pre-upgrade`-Hook, Probes, Resource-Limits, HPA + PDB (prod)
+- [ ] `values.db.mode`: `cnpg` (CloudNativePG; Staging mit 1 Instanz, Prod mit 3 Instanzen + Backup/PITR)
+      oder `external` (Managed DB)
+- [ ] Stagings als Namespaces `staging-<name>`, optional Preview-Envs pro PR
+- [ ] Secrets mit SOPS (age)
+- [ ] Deploy-Workflows um einen Helm-Pfad erweitern
+
+**Fertig, wenn:** Ein Rolling Update ohne Downtime läuft und die CNPG-Recovery in einen neuen Namespace funktioniert.
+
+### M8 – Azure
+- [ ] Terraform `infra/azure`: RG, AKS, Postgres Flexible Server (Staging B1ms, Prod HA),
+      Key Vault, Log Analytics, Remote-State in Azure Storage
+- [ ] GitHub → Azure per OIDC Federated Credentials (keine langlebigen Secrets)
+- [ ] External Secrets Operator + Key Vault
+- [ ] Prod-Pipeline mit Environment-Approval
+- [ ] ADR: Azure Container Apps als günstigere Alternative
+
+**Fertig, wenn:** Dasselbe Helm-Chart mit `db.mode=external` in AKS läuft.
+
+### M9 – Optional / Ausbau
+- [ ] AuthN: OIDC (Keycloak/Authentik zu Hause, Entra ID in Azure), entweder per oauth2-proxy am
+      Ingress oder in der App (Symfony `AccessTokenHandler` + Angular OIDC-Client)
+- [ ] GitOps mit Argo CD
+- [ ] Observability: Request-ID, `/metrics`, OpenTelemetry
+- [ ] cosign-Signaturen, SBOM
+
+### Durchgehend – Dokumentation
+- [ ] `docs/` mit einer Seite je Umgebung (dev, homeserver, k8s, azure)
+- [ ] ADRs in `docs/adr/` (z. B. Symfony ohne API Platform, FrankenPHP vs. php-fpm/nginx,
+      Compose vs. Kubernetes, Auth-Optionen)
