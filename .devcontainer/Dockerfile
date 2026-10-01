@@ -10,8 +10,14 @@ ARG USER_GID=1000
 # System-Pakete: Git, psql (Client passend zu Postgres 17), Tools für Composer
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        git unzip curl ca-certificates sudo bash-completion postgresql-client \
+        git unzip curl ca-certificates sudo bash-completion postgresql-client locales \
     && rm -rf /var/lib/apt/lists/*
+
+# Locales: VS Code reicht die Host-Locale (z. B. de_DE.UTF-8) in den Container durch.
+# Fehlt sie, warnen perl & Co. mit "Setting locale failed".
+RUN sed -i -E 's/^# (de_DE|en_US)\.UTF-8 UTF-8/\1.UTF-8 UTF-8/' /etc/locale.gen \
+    && locale-gen
+ENV LANG=en_US.UTF-8
 
 # PHP-Extensions: Postgres-Treiber, Intl (Symfony), Zip (Composer), Opcache
 COPY --from=docker.io/mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
