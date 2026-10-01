@@ -40,3 +40,7 @@ RUN groupadd --gid ${USER_GID} ${USERNAME} \
     && echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > /etc/sudoers.d/${USERNAME}
 
 USER ${USERNAME}
+
+# Mountpunkt für das Volume claude-config: Ein neues Volume übernimmt beim ersten
+# Mount Inhalt und Besitzer dieses Verzeichnisses – so gehört es dev statt root.
+RUN mkdir -p /home/${USERNAME}/.claude

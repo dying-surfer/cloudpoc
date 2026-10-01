@@ -76,6 +76,18 @@ make dev-down    # alles stoppen und entfernen
 Im workspace ist `psql` vorkonfiguriert (`PGHOST`, `PGUSER`, … sind gesetzt), ein nacktes
 `psql` reicht also. Für Symfony ist `DATABASE_URL` gesetzt.
 
+## Claude Code im Devcontainer
+
+Claude Code ist über das Feature `ghcr.io/anthropics/devcontainer-features/claude-code` im Image
+installiert. Im VS-Code-Terminal des Containers `claude` starten und beim ersten Mal anmelden.
+
+- Claude sieht im Container nur das Repo, nicht dein Home-Verzeichnis auf dem Host.
+- Login und Einstellungen liegen im benannten Volume `cloudpoc-dev_claude-config`
+  (`CLAUDE_CONFIG_DIR=/home/dev/.claude`). Sie überleben *Rebuild Container* und `make dev-down`.
+  Komplett abmelden: `podman volume rm cloudpoc-dev_claude-config` (bei gestopptem Container).
+- Projektregeln für Claude stehen in `CLAUDE.md`.
+- Im Container gibt es kein Podman. Container und Images baust du weiterhin auf dem Host.
+
 ## Warum es so gebaut ist
 
 - **`userns_mode: keep-id:uid=1000,gid=1000`:** Rootless Podman bildet deinen Host-User normalerweise
