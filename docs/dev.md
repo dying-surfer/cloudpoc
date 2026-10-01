@@ -76,6 +76,25 @@ make dev-down    # alles stoppen und entfernen
 Im workspace ist `psql` vorkonfiguriert (`PGHOST`, `PGUSER`, … sind gesetzt), ein nacktes
 `psql` reicht also. Für Symfony ist `DATABASE_URL` gesetzt.
 
+## Backend starten
+
+Im Terminal des Devcontainers:
+
+```bash
+cd backend
+php bin/console doctrine:migrations:migrate -n   # Schema anlegen (die DB ist nach jedem Neustart leer)
+symfony server:start -d --no-tls --port=8000 --allow-all-ip
+```
+
+VS Code leitet Port 8000 automatisch an den Host weiter (Tab *Ports*). Dann im Browser:
+
+- <http://localhost:8000/api/doc>: Swagger UI zum Ausprobieren
+- <http://localhost:8000/healthz>, <http://localhost:8000/readyz>: Health-Probes
+
+Logs: `symfony server:log` (folgt dem Log, Abbruch mit Strg+C). Stoppen: `symfony server:stop`.
+
+Fehler unter `/api` kommen als Problem Details (RFC 9457) mit `Content-Type: application/problem+json`.
+
 ## Claude Code im Devcontainer
 
 Claude Code ist über das Feature `ghcr.io/anthropics/devcontainer-features/claude-code` im Image
