@@ -1,0 +1,45 @@
+# Devcontainer-Stack: Arbeitsumgebung + Wegwerf-Datenbank.
+# Die Zugangsdaten gelten nur für diese lokale Wegwerf-DB und sind kein Secret.
+name: cloudpoc-dev
+
+services:
+  workspace:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Hält den Container am Leben; VS Code verbindet sich hinein.
+    command: sleep infinity
+    working_dir: /workspaces/cloudpoc
+    volumes:
+      # Repo in den Container mounten; :z setzt das SELinux-Label (Fedora/Bluefin)
+      - ..:/workspaces/cloudpoc:z
+    # Rootless Podman: Host-User wird auf Container-User dev (1000:1000) abgebildet,
+    # damit Dateien im Repo auf beiden Seiten dir gehören
+    userns_mode: keep-id:uid=1000,gid=1000
+    environment:
+      # Standard-Variablen von libpq: `psql` ohne Parameter verbindet direkt zur DB
+      PGHOST: db
+      PGUSER: app
+      PGPASSWORD: app
+      PGDATABASE: app
+      DATABASE_URL: postgresql://app:app@db:5432/app?serverVersion=17&charset=utf8
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    # Kein Volume: Das Datenverzeichnis liegt im RAM (tmpfs) und ist beim
+    # Neustart des Containers leer. Ohne diese Zeile würde das Image wegen
+    # seiner VOLUME-Anweisung ein anonymes Volume anlegen, das Neustarts überlebt.
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
