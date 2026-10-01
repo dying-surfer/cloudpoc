@@ -29,3 +29,12 @@ dev-psql: ## psql im Devcontainer gegen die Wegwerf-DB öffnen
 
 dev-down: ## Devcontainer stoppen und entfernen (DB-Inhalt ist danach weg)
 	@$(DEV_COMPOSE) down
+
+# --- Backend (läuft im Devcontainer) -----------------------------------------
+
+BACKEND = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/backend workspace
+
+.PHONY: backend-install
+
+backend-install: ## Composer-Abhängigkeiten des Backends installieren
+	@$(BACKEND) composer install
