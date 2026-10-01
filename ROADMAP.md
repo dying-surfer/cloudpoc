@@ -81,7 +81,7 @@ Makefile                einheitliche Entry-Points
 
 ### M4 – Prod-Images & lokaler Compose-Stack
 - [ ] Backend-Dockerfile (FrankenPHP, Multi-Stage, `--no-dev`, Opcache, non-root)
-      (prüfen: `src/Factory`, `src/Story`, `src/DataFixtures` hängen an Dev-Paketen)
+      (`.containerignore`: `backend/fixtures/`, `backend/tests/` gehören nicht ins Image)
 - [ ] Frontend-Dockerfile (Node-Build → nginx-unprivileged, SPA-Fallback)
 - [ ] `deploy/compose/compose.yaml` mit Reverse Proxy, frontend, backend, migrate (one-shot) und
       postgres (benanntes Volume)

@@ -45,6 +45,7 @@
     },
     "autoload-dev": {
         "psr-4": {
+            "App\\Fixtures\\": "fixtures/",
             "App\\Tests\\": "tests/"
         }
     },

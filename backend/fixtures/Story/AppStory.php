@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\Story;
+namespace App\Fixtures\Story;
 
-use App\Factory\TicketFactory;
+use App\Fixtures\Factory\TicketFactory;
 use Zenstruck\Foundry\Story;
 
 /**

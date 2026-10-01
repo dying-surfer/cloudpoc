@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace App\DataFixtures;
+namespace App\Fixtures\DataFixtures;
 
-use App\Story\AppStory;
+use App\Fixtures\Story\AppStory;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
 

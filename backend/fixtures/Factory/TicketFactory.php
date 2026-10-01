@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Factory;
+namespace App\Fixtures\Factory;
 
 use App\Entity\Ticket;
 use App\Enum\TicketPriority;
