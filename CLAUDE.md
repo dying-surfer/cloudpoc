@@ -29,7 +29,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
 - **M2** (Backend: Ticket-API), Branch `m2-ticket-api`. Plan:
   1. ✅ Symfony-7.4-Skeleton + Pakete (Doctrine, Serializer, Validator, Uid, Monolog, NelmioApiDoc;
      dev: Maker, PHPUnit, Foundry, Fixtures, DAMA, PHPStan, PHP-CS-Fixer)
-  2. Entity `Ticket` + erste Migration
+  2. ✅ Entity `Ticket` + erste Migration
   3. Querschnitt: JSON-Logs auf stdout, Fehler als Problem Details (RFC 9457), `/healthz`, `/readyz`
   4. Endpunkte: CRUD, Filter/Sortierung/Paging, `POST /api/tickets/{id}/close`, Optimistic Locking, OpenAPI
   5. Fixtures (Foundry, ca. 200 Tickets)
