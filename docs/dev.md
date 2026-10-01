@@ -112,6 +112,15 @@ Im Browser: <http://localhost:4200> (VS Code leitet den Port weiter wie beim Bac
 Für den Browser kommen App und API so vom selben Origin, CORS braucht es nicht. Später übernimmt
 das der Reverse Proxy (M4).
 
+**Runtime-Config:** Beim Start lädt die App `/config.json` (lokal aus `frontend/public/`), erst
+danach rendert sie. Darin steht z. B. der Text des Umgebungs-Banners. Weil die Datei nicht in
+den Build eingebaut wird, läuft dasselbe Image später in jeder Umgebung, nur die `config.json`
+wird ausgetauscht. Fehlt sie, startet die App absichtlich nicht.
+
+**UI:** Angular Material (Material 3), Schriften selbst gehostet aus npm-Paketen statt vom
+Google-CDN. Hell/Dunkel folgt standardmäßig dem System; die Wahl im Menü oben rechts landet im
+`localStorage`. Warum nicht PrimeNG: `docs/adr/0001-angular-material-statt-primeng.md`.
+
 ## Tests und Checks
 
 ```bash
@@ -165,3 +174,4 @@ installiert. Im VS-Code-Terminal des Containers `claude` starten und beim ersten
 | `podman build … updateUID.Dockerfile` schlägt fehl | Die CLI sucht `localhost/<image>`, Compose taggt aber `docker.io/library/<image>`. Deshalb ist in `devcontainer.json` `updateRemoteUserUID: false` gesetzt; die UID-Anpassung übernimmt `keep-id` |
 | `devcontainer exec psql -c …`: „Unknown argument: c“ | Die CLI wertet Optionen mit `-` auch für den Befehl im Container aus. Stattdessen `podman compose -f .devcontainer/compose.yaml exec workspace …` nutzen (so machen es auch die `make`-Targets) |
 | `perl: warning: Setting locale failed`          | Die Host-Locale fehlt im Image. Erzeugt werden `de_DE.UTF-8` und `en_US.UTF-8` (Dockerfile); weitere bei Bedarf dort in `locale.gen` ergänzen |
+| npm: „packages have install scripts not yet covered by allowScripts“ | npm 11 führt Install-Skripte nur noch nach Freigabe aus. Entschieden wird pro Paket in `allowScripts` (`frontend/package.json`); die Build-Tools dort laufen mit ihren mitgelieferten Binaries, ihre Skripte sind abgelehnt. Bei einem neuen Paket: `npm install-scripts ls`, dann `approve` oder `deny` |

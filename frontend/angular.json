@@ -25,7 +25,12 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/styles.css"]
+            "styles": [
+              "@fontsource/roboto/400.css",
+              "@fontsource/roboto/500.css",
+              "@material-symbols/font-400/outlined.css",
+              "src/styles.scss"
+            ]
           },
           "configurations": {
             "production": {
