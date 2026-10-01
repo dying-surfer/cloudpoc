@@ -78,10 +78,10 @@ Im workspace ist `psql` vorkonfiguriert (`PGHOST`, `PGUSER`, … sind gesetzt), 
 
 ## Warum es so gebaut ist
 
-- **`userns_mode: keep-id`:** Rootless Podman bildet deinen Host-User normalerweise auf root im
-  Container ab. `keep-id` bildet stattdessen Host-UID 1000 auf den Container-User `dev`
-  (UID 1000) ab. So gehören Dateien, die im Container entstehen (`vendor/`, `node_modules/`),
-  auf dem Host dir.
+- **`userns_mode: keep-id:uid=1000,gid=1000`:** Rootless Podman bildet deinen Host-User normalerweise
+  auf root im Container ab. `keep-id` bildet ihn stattdessen auf den Container-User `dev` (UID 1000)
+  ab, und das unabhängig davon, welche UID du auf dem Host hast. So gehören Dateien, die im
+  Container entstehen (`vendor/`, `node_modules/`), auf dem Host dir.
 - **`:z` am Repo-Mount:** setzt das SELinux-Label, damit der Container das Repo lesen und
   schreiben darf (Fedora/Bluefin).
 - **`tmpfs` statt Volume für die DB:** Das Postgres-Image deklariert ein `VOLUME`. Ohne
@@ -95,3 +95,5 @@ Im workspace ist `psql` vorkonfiguriert (`PGHOST`, `PGUSER`, … sind gesetzt), 
 | `Cannot connect to the Docker daemon`           | Socket läuft nicht: `systemctl --user status podman.socket`         |
 | `Permission denied` auf Dateien im Container    | SELinux-Label fehlt (`:z`) oder UID-Mapping (`keep-id`) greift nicht |
 | VS Code sucht `docker`                          | User-Setting `dev.containers.dockerPath: podman` fehlt              |
+| `podman build … updateUID.Dockerfile` schlägt fehl | Die CLI sucht `localhost/<image>`, Compose taggt aber `docker.io/library/<image>`. Deshalb ist in `devcontainer.json` `updateRemoteUserUID: false` gesetzt; die UID-Anpassung übernimmt `keep-id` |
+| `devcontainer exec psql -c …`: „Unknown argument: c“ | Die CLI wertet Optionen mit `-` auch für den Befehl im Container aus. Stattdessen `podman compose -f .devcontainer/compose.yaml exec workspace …` nutzen (so machen es auch die `make`-Targets) |

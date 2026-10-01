@@ -9,11 +9,13 @@ services:
       dockerfile: Dockerfile
     # Hält den Container am Leben; VS Code verbindet sich hinein.
     command: sleep infinity
+    working_dir: /workspaces/cloudpoc
     volumes:
       # Repo in den Container mounten; :z setzt das SELinux-Label (Fedora/Bluefin)
       - ..:/workspaces/cloudpoc:z
-    # Rootless Podman: Host-UID 1000 = Container-UID 1000, damit Dateirechte stimmen
-    userns_mode: keep-id
+    # Rootless Podman: Host-User wird auf Container-User dev (1000:1000) abgebildet,
+    # damit Dateien im Repo auf beiden Seiten dir gehören
+    userns_mode: keep-id:uid=1000,gid=1000
     environment:
       # Standard-Variablen von libpq: `psql` ohne Parameter verbindet direkt zur DB
       PGHOST: db

@@ -48,9 +48,9 @@ Makefile                einheitliche Entry-Points
 ## Meilensteine
 
 ### M1 – Repo-Skeleton & Devcontainer
-- [ ] Ordnerstruktur, `Makefile`, `.editorconfig`, `.gitignore`
-- [ ] `.devcontainer/` mit dem Service `workspace` (PHP 8.4, Composer, Symfony CLI, Node LTS, psql) und dem Service `db` (postgres:17, **ohne Volume**, also eine Wegwerf-DB)
-- [ ] Podman-Hinweise in `docs/dev.md` (`dev.containers.dockerPath: podman`, Podman-Socket)
+- [x] Ordnerstruktur, `Makefile`, `.editorconfig`, `.gitignore`
+- [x] `.devcontainer/` mit dem Service `workspace` (PHP 8.4, Composer, Symfony CLI, Node LTS, psql) und dem Service `db` (postgres:17, **ohne Volume**, also eine Wegwerf-DB)
+- [x] Podman-Hinweise in `docs/dev.md` (`dev.containers.dockerPath: podman`, Podman-Socket)
 
 **Fertig, wenn:** Der Devcontainer startet und `psql` die DB erreicht.
 

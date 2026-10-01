@@ -4,6 +4,8 @@
   "service": "workspace",
   "workspaceFolder": "/workspaces/cloudpoc",
   "remoteUser": "dev",
+  // UID-Anpassung übernimmt Podman (userns_mode: keep-id in compose.yaml)
+  "updateRemoteUserUID": false,
   // Beim Schließen von VS Code beide Container stoppen (DB-Inhalt ist dann weg)
   "shutdownAction": "stopCompose",
   "customizations": {
