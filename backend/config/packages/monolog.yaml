@@ -2,14 +2,20 @@ monolog:
     channels: # To see all channels, run bin/console debug:autowiring logger
         - deprecation # Deprecations are logged in the dedicated "deprecation" channel when it exists
 
+# 12-factor: logs are an event stream. We write JSON lines to stderr and let the
+# platform (Podman, Kubernetes, Azure) collect them. stderr instead of stdout so that
+# log lines never mix with the output of console commands (e.g. `bin/console ... > file`);
+# container runtimes collect both streams.
+
 when@dev:
     monolog:
         handlers:
             main:
                 type: stream
-                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                path: php://stderr
                 level: debug
-                channels: ["!event"]
+                formatter: monolog.formatter.json
+                channels: ["!event", "!doctrine", "!console", "!deprecation"]
             console:
                 type: console
                 process_psr_3_messages: false
