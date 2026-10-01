@@ -10,7 +10,7 @@ Zielplattformen reichen vom Homeserver bis Azure.
 | Thema           | Wahl                                                                    |
 |-----------------|-------------------------------------------------------------------------|
 | Backend         | Symfony 7.4 LTS, PHP 8.4, Doctrine ORM + Migrations, FrankenPHP         |
-| Frontend        | Angular (aktuell), Standalone, Signals, Signal Forms, PrimeNG           |
+| Frontend        | Angular (aktuell), Standalone, Signals, Reactive Forms, PrimeNG         |
 | Datenbank       | PostgreSQL 17                                                           |
 | API             | JSON, REST-Stil, RPC-Endpunkte nach Bedarf, Fehler als RFC 9457         |
 | CI/CD, Registry | GitHub Actions + GHCR                                                   |
@@ -74,7 +74,7 @@ Makefile                einheitliche Entry-Points
       (Standard: Systemeinstellung)
 - [ ] `/tickets` als Tabelle (`p-table`, lazy) mit Paginator, Sortierung und Filterleiste
       (Filter in den Query-Params, serverseitig ausgewertet)
-- [ ] `/tickets/new` und `/tickets/:id` als Signal Form mit Speichern, Löschen (mit Bestätigung) und Schließen
+- [ ] `/tickets/new` und `/tickets/:id` als Reactive Form mit Speichern, Löschen (mit Bestätigung) und Schließen
 - [ ] `TicketApiService`, Interceptor für Problem Details (Toast)
 - [ ] Runtime-Config über `/config.json` (z. B. Umgebungs-Banner)
 - [ ] `proxy.conf.json` für `ng serve`, Unit-Tests
