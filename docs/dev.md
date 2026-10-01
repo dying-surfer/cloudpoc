@@ -83,6 +83,7 @@ Im Terminal des Devcontainers:
 ```bash
 cd backend
 php bin/console doctrine:migrations:migrate -n   # Schema anlegen (die DB ist nach jedem Neustart leer)
+php bin/console doctrine:fixtures:load -n       # 200 Demo-Tickets (löscht vorher alle Daten)
 symfony server:start -d --no-tls --port=8000 --allow-all-ip
 ```
 

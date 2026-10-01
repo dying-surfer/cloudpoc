@@ -1,15 +1,19 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Story;
 
-use Zenstruck\Foundry\Attribute\AsFixture;
+use App\Factory\TicketFactory;
 use Zenstruck\Foundry\Story;
 
-#[AsFixture(name: 'main')]
+/**
+ * Demo data for development and staging: `bin/console doctrine:fixtures:load`.
+ */
 final class AppStory extends Story
 {
     public function build(): void
     {
-        // SomeFactory::createOne();
+        TicketFactory::createMany(200);
     }
 }
