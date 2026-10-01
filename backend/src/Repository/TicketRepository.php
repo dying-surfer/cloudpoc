@@ -68,16 +68,16 @@ class TicketRepository extends ServiceEntityRepository
                 ->setParameter('q', $needle);
         }
         if (null !== $query->status) {
-            $qb->andWhere('t.status = :status')->setParameter('status', $query->status);
+            $qb->andWhere('t.status = :status')->setParameter('status', $query->statusEnum());
         }
         if (null !== $query->priority) {
-            $qb->andWhere('t.priority = :priority')->setParameter('priority', $query->priority);
+            $qb->andWhere('t.priority = :priority')->setParameter('priority', $query->priorityEnum());
         }
         if (null !== $query->assignee) {
             $qb->andWhere('t.assignee = :assignee')->setParameter('assignee', $query->assignee);
         }
         if (null !== $query->dueBefore) {
-            $qb->andWhere('t.dueDate < :dueBefore')->setParameter('dueBefore', $query->dueBefore, 'date_immutable');
+            $qb->andWhere('t.dueDate < :dueBefore')->setParameter('dueBefore', $query->dueBeforeObject(), 'date_immutable');
         }
 
         return $qb;

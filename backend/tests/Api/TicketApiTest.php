@@ -102,12 +102,17 @@ final class TicketApiTest extends ApiTestCase
         self::assertEqualsCanonicalizing(['sort', 'pageSize'], $this->violationFields($body));
     }
 
+    public function testInvalidDueBeforeIsRejected(): void
+    {
+        $this->assertProblem(400, $this->request('GET', '/api/tickets?dueBefore=2030-13-01'));
+    }
+
     public function testInvalidEnumValueListsAllowedValues(): void
     {
         $body = $this->request('GET', '/api/tickets?status=wip');
 
         $this->assertProblem(400, $body);
-        self::assertSame([['field' => 'status', 'message' => 'Allowed values: open, in_progress, done.']], $body['violations']);
+        self::assertSame([['field' => 'status', 'message' => 'Allowed values: "open", "in_progress", "done".']], $body['violations']);
     }
 
     // --- Read ----------------------------------------------------------------
@@ -166,6 +171,24 @@ final class TicketApiTest extends ApiTestCase
 
         $this->assertProblem(422, $body);
         self::assertEqualsCanonicalizing(['priority', 'dueDate'], $this->violationFields($body));
+    }
+
+    public function testCreateReportsAllErrorsAtOnce(): void
+    {
+        // Invalid enum and date values must not hide the other validation errors.
+        $body = $this->request('POST', '/api/tickets', ['title' => '', 'status' => 'wip', 'dueDate' => '01.02.2030']);
+
+        $this->assertProblem(422, $body);
+        self::assertEqualsCanonicalizing(['title', 'status', 'dueDate'], $this->violationFields($body));
+    }
+
+    public function testCreateRejectsImpossibleCalendarDate(): void
+    {
+        // PHP would silently roll 2030-02-31 over to 2030-03-03.
+        $body = $this->request('POST', '/api/tickets', ['title' => 'x', 'dueDate' => '2030-02-31']);
+
+        $this->assertProblem(422, $body);
+        self::assertSame([['field' => 'dueDate', 'message' => 'Expected a valid date in the format YYYY-MM-DD.']], $body['violations']);
     }
 
     public function testCreateRejectsMalformedJson(): void
