@@ -96,12 +96,31 @@ Logs: `symfony server:log` (folgt dem Log, Abbruch mit Strg+C). Stoppen: `symfon
 
 Fehler unter `/api` kommen als Problem Details (RFC 9457) mit `Content-Type: application/problem+json`.
 
+## Frontend starten
+
+Das Backend muss laufen (siehe oben). Dann in einem zweiten Terminal des Devcontainers:
+
+```bash
+cd frontend
+npm ci        # nur beim ersten Mal bzw. nach Änderungen am package-lock.json
+npm start     # ng serve auf Port 4200, lädt bei Änderungen automatisch neu
+```
+
+Im Browser: <http://localhost:4200> (VS Code leitet den Port weiter wie beim Backend).
+
+`ng serve` leitet alles unter `/api` per `proxy.conf.json` an das Backend auf Port 8000 weiter.
+Für den Browser kommen App und API so vom selben Origin, CORS braucht es nicht. Später übernimmt
+das der Reverse Proxy (M4).
+
 ## Tests und Checks
 
 ```bash
 make test             # alles; geht auf dem Host und im Devcontainer
-cd backend && composer check   # dasselbe direkt: cs + phpstan + test
+cd backend && composer check   # Backend direkt: cs + phpstan + test
 composer cs-fix       # Code-Style automatisch korrigieren
+cd frontend && npm run check   # Frontend direkt: prettier + eslint + vitest + build
+npm run format        # Formatierung automatisch korrigieren (Prettier)
+npm test              # Vitest im Watch-Modus, während man entwickelt
 ```
 
 - Die API-Tests laufen gegen eine eigene Postgres-DB **`app_test`** (Doctrine hängt im Test-Env

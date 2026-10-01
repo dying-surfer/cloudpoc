@@ -52,6 +52,23 @@ backend-fixtures: ## Dev-DB migrieren und mit 200 Demo-Tickets füllen (löscht 
 backend-check: ## Backend: Code-Style, PHPStan, PHPUnit (gegen die Test-DB)
 	@$(BACKEND) composer check
 
+# --- Frontend (läuft im Devcontainer) ----------------------------------------
+# Gleiches Muster wie beim Backend, nur im Ordner frontend/.
+
+ifneq ($(shell command -v podman 2>/dev/null),)
+FRONTEND = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/frontend workspace
+else
+FRONTEND = cd frontend &&
+endif
+
+.PHONY: frontend-install frontend-check
+
+frontend-install: ## npm-Abhängigkeiten des Frontends installieren (exakt nach Lockfile)
+	@$(FRONTEND) npm ci
+
+frontend-check: ## Frontend: Prettier, ESLint, Vitest, Produktions-Build
+	@$(FRONTEND) npm run check
+
 # --- Alles ---------------------------------------------------------------------
 
-test: backend-check ## Alle Checks und Tests (später auch Frontend)
+test: backend-check frontend-check ## Alle Checks und Tests (Backend und Frontend)
