@@ -1,0 +1,20 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Frontend, Config, Markup: 2 Spaces (Angular-/YAML-Konvention)
+[*.{ts,js,mjs,json,html,scss,css,yaml,yml}]
+indent_size = 2
+
+[Makefile]
+indent_style = tab
+
+# Zwei Leerzeichen am Zeilenende = Zeilenumbruch in Markdown
+[*.md]
+trim_trailing_whitespace = false

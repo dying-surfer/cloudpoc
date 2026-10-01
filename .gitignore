@@ -1,0 +1,26 @@
+# Repo-weite Regeln. Backend (Symfony) und Frontend (Angular) bringen
+# eigene .gitignore-Dateien in ihren Unterordnern mit.
+
+# Editor / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+
+# Lokale Konfiguration und Secrets – nie ins Repo
+.env.local
+.env.*.local
+*.local.yaml
+secrets/
+
+# DB-Dumps (können echte Daten enthalten)
+db/dumps/
+*.sql.gz
+*.dump
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
