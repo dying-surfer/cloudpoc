@@ -63,9 +63,12 @@ final class ProblemDetailsListener
             $problem['detail'] = 'The request data is invalid.';
             $problem['violations'] = [];
             foreach ($validation->getViolations() as $violation) {
+                // Type errors during deserialization carry a client-safe "hint"
+                // (e.g. "Allowed values: …"), which says more than the generic message.
+                $hint = $violation->getParameters()['hint'] ?? null;
                 $problem['violations'][] = [
                     'field' => $violation->getPropertyPath(),
-                    'message' => $violation->getMessage(),
+                    'message' => \is_string($hint) ? $hint : $violation->getMessage(),
                 ];
             }
         }
