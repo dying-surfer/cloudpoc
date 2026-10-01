@@ -5,4 +5,5 @@ parameters:
         - config/
         - public/
         - src/
+        - fixtures/
         - tests/

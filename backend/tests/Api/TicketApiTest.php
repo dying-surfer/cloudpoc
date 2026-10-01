@@ -6,7 +6,7 @@ namespace App\Tests\Api;
 
 use App\Enum\TicketPriority;
 use App\Enum\TicketStatus;
-use App\Factory\TicketFactory;
+use App\Fixtures\Factory\TicketFactory;
 
 final class TicketApiTest extends ApiTestCase
 {

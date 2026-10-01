@@ -30,5 +30,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Request-/Response-DTOs in `src/Dto` (nie die Entity serialisieren), Fehler als Problem Details
     über `ProblemDetailsListener`, Optimistic Locking über `version` im Body (409 bei Konflikt).
   - Checks: `make test` bzw. `cd backend && composer check` (cs, phpstan, phpunit gegen `app_test`).
+  - Factories, Stories, Fixtures liegen in `backend/fixtures/` (Namespace `App\Fixtures`, nur `autoload-dev`,
+    Services nur in dev/test), damit ein `--no-dev`-Build sie nicht enthält. Nicht nach `src/` legen.
   - Demo-Daten: `make backend-fixtures`. Dev-Server: siehe `docs/dev.md` (Backend starten).
 - **M3** (Frontend): als Nächstes, noch nicht begonnen. Plan vorher mit dem User abstimmen.

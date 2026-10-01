@@ -21,3 +21,17 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+# Factories, stories and fixtures depend on dev-only packages (Foundry, Faker,
+# DoctrineFixturesBundle). They live in fixtures/ with autoload-dev, so a
+# `composer install --no-dev` build does not contain them at all.
+when@dev: &fixtures
+    services:
+        _defaults:
+            autowire: true
+            autoconfigure: true
+
+        App\Fixtures\:
+            resource: '../fixtures/'
+
+when@test: *fixtures
