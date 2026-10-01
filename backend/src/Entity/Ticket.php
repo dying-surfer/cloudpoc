@@ -70,6 +70,11 @@ class Ticket
         $this->updatedAt = new \DateTimeImmutable();
     }
 
+    public function close(): void
+    {
+        $this->status = TicketStatus::Done;
+    }
+
     public function getId(): Uuid
     {
         return $this->id;

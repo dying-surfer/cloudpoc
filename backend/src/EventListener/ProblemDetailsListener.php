@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\EventListener;
 
+use Doctrine\ORM\OptimisticLockException;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
@@ -36,9 +38,12 @@ final class ProblemDetailsListener
         }
 
         $exception = $event->getThrowable();
+        if ($exception instanceof OptimisticLockException) {
+            $exception = new ConflictHttpException('The resource was changed in the meantime. Reload it and apply your changes again.', $exception);
+        }
+
         $status = Response::HTTP_INTERNAL_SERVER_ERROR;
         $headers = [];
-
         if ($exception instanceof HttpExceptionInterface) {
             $status = $exception->getStatusCode();
             $headers = $exception->getHeaders();
