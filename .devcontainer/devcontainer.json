@@ -8,12 +8,17 @@
   "updateRemoteUserUID": false,
   // Beim Schließen von VS Code beide Container stoppen (DB-Inhalt ist dann weg)
   "shutdownAction": "stopCompose",
+  // Claude Code im Container: sieht nur das Repo, nicht das Home-Verzeichnis des Hosts
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
   "customizations": {
     "vscode": {
       "extensions": [
         "EditorConfig.EditorConfig",
         "bmewburn.vscode-intelephense-client",
-        "Angular.ng-template"
+        "Angular.ng-template",
+        "anthropic.claude-code"
       ]
     }
   }

@@ -55,17 +55,17 @@ Makefile                einheitliche Entry-Points
 **Fertig, wenn:** Der Devcontainer startet und `psql` die DB erreicht.
 
 ### M2 – Backend: Ticket-API
-- [ ] Symfony-Skeleton + Doctrine, Migrations, Serializer, Validator, Monolog (JSON), NelmioApiDoc
-- [ ] Entity `Ticket`: `id` (UUIDv7), `title`, `description`, `status` (open/in_progress/done),
+- [x] Symfony-Skeleton + Doctrine, Migrations, Serializer, Validator, Monolog (JSON), NelmioApiDoc
+- [x] Entity `Ticket`: `id` (UUIDv7), `title`, `description`, `status` (open/in_progress/done),
       `priority` (low/medium/high), `assignee`, `dueDate`, `createdAt`, `updatedAt`, `version`
-- [ ] Endpunkte:
+- [x] Endpunkte:
   - `GET /api/tickets?q=&status=&priority=&assignee=&dueBefore=&sort=&page=&pageSize=`
   - `GET|PUT|DELETE /api/tickets/{id}`, `POST /api/tickets`
   - RPC: `POST /api/tickets/{id}/close`
   - `/healthz`, `/readyz`, OpenAPI unter `/api/doc`
-- [ ] Problem Details (RFC 9457), Optimistic Locking über `version`
-- [ ] Fixtures (Foundry, ca. 200 Tickets)
-- [ ] PHPUnit (API-Tests gegen echte Postgres), PHPStan, PHP-CS-Fixer
+- [x] Problem Details (RFC 9457), Optimistic Locking über `version`
+- [x] Fixtures (Foundry, ca. 200 Tickets)
+- [x] PHPUnit (API-Tests gegen echte Postgres), PHPStan, PHP-CS-Fixer
 
 **Fertig, wenn:** `make test` grün ist und `curl /api/tickets?status=open` sinnvolle Daten liefert.
 
@@ -81,6 +81,7 @@ Makefile                einheitliche Entry-Points
 
 ### M4 – Prod-Images & lokaler Compose-Stack
 - [ ] Backend-Dockerfile (FrankenPHP, Multi-Stage, `--no-dev`, Opcache, non-root)
+      (prüfen: `src/Factory`, `src/Story`, `src/DataFixtures` hängen an Dev-Paketen)
 - [ ] Frontend-Dockerfile (Node-Build → nginx-unprivileged, SPA-Fallback)
 - [ ] `deploy/compose/compose.yaml` mit Reverse Proxy, frontend, backend, migrate (one-shot) und
       postgres (benanntes Volume)

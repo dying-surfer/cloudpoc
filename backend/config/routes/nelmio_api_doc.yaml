@@ -1,0 +1,11 @@
+# OpenAPI document as JSON (e.g. for client generators)
+app.swagger:
+    path: /api/doc.json
+    methods: GET
+    defaults: { _controller: nelmio_api_doc.controller.swagger }
+
+# Swagger UI to try out the API in the browser
+app.swagger_ui:
+    path: /api/doc
+    methods: GET
+    defaults: { _controller: nelmio_api_doc.controller.swagger_ui }

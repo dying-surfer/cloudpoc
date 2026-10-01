@@ -76,6 +76,54 @@ make dev-down    # alles stoppen und entfernen
 Im workspace ist `psql` vorkonfiguriert (`PGHOST`, `PGUSER`, … sind gesetzt), ein nacktes
 `psql` reicht also. Für Symfony ist `DATABASE_URL` gesetzt.
 
+## Backend starten
+
+Im Terminal des Devcontainers:
+
+```bash
+cd backend
+php bin/console doctrine:migrations:migrate -n   # Schema anlegen (die DB ist nach jedem Neustart leer)
+php bin/console doctrine:fixtures:load -n       # 200 Demo-Tickets (löscht vorher alle Daten)
+symfony server:start -d --no-tls --port=8000 --allow-all-ip
+```
+
+VS Code leitet Port 8000 automatisch an den Host weiter (Tab *Ports*). Dann im Browser:
+
+- <http://localhost:8000/api/doc>: Swagger UI zum Ausprobieren
+- <http://localhost:8000/healthz>, <http://localhost:8000/readyz>: Health-Probes
+
+Logs: `symfony server:log` (folgt dem Log, Abbruch mit Strg+C). Stoppen: `symfony server:stop`.
+
+Fehler unter `/api` kommen als Problem Details (RFC 9457) mit `Content-Type: application/problem+json`.
+
+## Tests und Checks
+
+```bash
+make test             # alles; geht auf dem Host und im Devcontainer
+cd backend && composer check   # dasselbe direkt: cs + phpstan + test
+composer cs-fix       # Code-Style automatisch korrigieren
+```
+
+- Die API-Tests laufen gegen eine eigene Postgres-DB **`app_test`** (Doctrine hängt im Test-Env
+  `_test` an den DB-Namen). Foundry baut sie bei jedem Testlauf frisch auf, und zwar über die
+  echten Migrationen. Fehlt also eine Migration, schlagen die Tests fehl.
+- Jeder Test läuft in einer Transaktion, die DAMA danach zurückrollt: Tests sehen sich gegenseitig
+  nicht, und die Test-DB bleibt leer. Die Dev-DB `app` wird nie angefasst.
+- Testdaten erzeugen die Tests selbst mit `TicketFactory`, statt auf die Fixtures zu bauen.
+  So steht im Test, wovon er abhängt.
+
+## Claude Code im Devcontainer
+
+Claude Code ist über das Feature `ghcr.io/anthropics/devcontainer-features/claude-code` im Image
+installiert. Im VS-Code-Terminal des Containers `claude` starten und beim ersten Mal anmelden.
+
+- Claude sieht im Container nur das Repo, nicht dein Home-Verzeichnis auf dem Host.
+- Login und Einstellungen liegen im benannten Volume `cloudpoc-dev_claude-config`
+  (`CLAUDE_CONFIG_DIR=/home/dev/.claude`). Sie überleben *Rebuild Container* und `make dev-down`.
+  Komplett abmelden: `podman volume rm cloudpoc-dev_claude-config` (bei gestopptem Container).
+- Projektregeln für Claude stehen in `CLAUDE.md`.
+- Im Container gibt es kein Podman. Container und Images baust du weiterhin auf dem Host.
+
 ## Warum es so gebaut ist
 
 - **`userns_mode: keep-id:uid=1000,gid=1000`:** Rootless Podman bildet deinen Host-User normalerweise
