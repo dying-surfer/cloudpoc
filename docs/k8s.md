@@ -162,3 +162,106 @@ kubectl top node                                       # CPU/RAM, via metrics-se
 ```
 
 Läuft `kubectl get nodes` vom Host aus, ist Schritt 1 fertig.
+
+## 4. CloudNativePG-Operator
+
+### Was ein Operator ist
+
+Kubernetes kennt von Haus aus nur allgemeine Bausteine: Pods, Deployments, Services, Volumes.
+Eine Datenbank braucht mehr Wissen: `initdb` beim ersten Start, Benutzer und Passwörter anlegen,
+Backups, Wiederherstellung, Upgrades. Ein **Operator** bringt dieses Wissen in den Cluster:
+
+1. Er definiert einen **neuen Ressourcentyp** (CRD), hier `Cluster` von `postgresql.cnpg.io`.
+2. Er läuft selbst als Pod und **beobachtet** diese Ressourcen. Legt jemand einen `Cluster` an,
+   erzeugt der Operator daraus Pods, Volumes, Services und Secrets, und hält sie dauerhaft im
+   beschriebenen Zustand (stirbt ein Pod, baut er ihn neu, mit denselben Daten).
+
+Wir beschreiben also nur noch, **was** wir wollen („eine Postgres-17-Instanz mit 1 GB Platz“),
+das **Wie** erledigt der Operator. Dasselbe Prinzip wie bei Deployments, nur mit Datenbank-Wissen.
+
+Der Operator wird **einmal pro Cluster** installiert (Namespace `cnpg-system`). Unser Chart legt
+später pro Umgebung nur noch eine `Cluster`-Ressource an.
+
+### Installieren
+
+Per Helm aus dem offiziellen Chart-Repo, auf dem Host:
+
+```bash
+export KUBECONFIG=~/.kube/cloudpoc-k3s.yaml
+helm repo add cnpg https://cloudnative-pg.github.io/charts
+helm repo update
+helm search repo cnpg/cloudnative-pg              # CHART VERSION und APP VERSION (= Operator)
+
+helm upgrade --install cnpg cnpg/cloudnative-pg \
+  --namespace cnpg-system --create-namespace \
+  --version <CHART VERSION aus der Suche> --wait
+```
+
+- `upgrade --install`: installiert beim ersten Mal, aktualisiert danach. Derselbe Befehl taugt
+  also für beides, deshalb nutzen ihn Skripte und Workflows gern.
+- `--version`: Chart-Version festhalten, sonst nimmt Helm die neueste, und zwei Installationen
+  sind nicht mehr gleich.
+- `--wait`: kehrt erst zurück, wenn der Operator-Pod bereit ist.
+
+Prüfen:
+
+```bash
+helm list -n cnpg-system                            # cnpg   deployed   cloudnative-pg-…
+kubectl get pods -n cnpg-system                     # cnpg-cloudnative-pg-…   1/1 Running
+kubectl get crd | grep cnpg                         # clusters.postgresql.cnpg.io, backups…, …
+```
+
+### Test-Cluster zum Anschauen
+
+Bevor das Chart eine DB anlegt, einmal von Hand, um zu sehen, was der Operator erzeugt:
+
+```bash
+kubectl create namespace cnpg-test
+kubectl apply -n cnpg-test -f - <<EOT
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pg-test
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 1Gi
+EOT
+
+kubectl get cluster -n cnpg-test -w                 # bis STATUS "Cluster in healthy state" (Strg+C)
+kubectl get pods,pvc,svc,secret -n cnpg-test
+```
+
+Was dabei entsteht:
+
+| Objekt                                        | Bedeutung                                                     |
+|-----------------------------------------------|---------------------------------------------------------------|
+| Pod `pg-test-1-initdb-…` (Completed)          | Einmal-Job: `initdb`, legt DB `app` mit Owner `app` an         |
+| Pod `pg-test-1`                               | Die Postgres-Instanz                                          |
+| PVC `pg-test-1`                               | Das Volume (von local-path auf der VM-Disk)                   |
+| Services `pg-test-rw`, `-ro`, `-r`            | Lesen+Schreiben (Primary), nur Replikas, beliebige Instanz    |
+| Secret `pg-test-app`                          | Zugangsdaten für `app`, inkl. fertiger `uri`                  |
+
+Die App würde sich später mit `pg-test-rw` verbinden und die Zugangsdaten aus `pg-test-app` lesen:
+
+```bash
+kubectl get secret -n cnpg-test pg-test-app -o jsonpath='{.data.uri}' | base64 -d; echo
+kubectl exec -n cnpg-test pg-test-1 -- psql -U postgres -d app -c 'select version()'
+```
+
+**Selbstheilung ausprobieren:** Pod löschen und zusehen, wie der Operator ihn neu baut. Das Volume
+bleibt, die Daten also auch:
+
+```bash
+kubectl exec -n cnpg-test pg-test-1 -- psql -U postgres -d app -c 'create table t (x int); insert into t values (42)'
+kubectl delete pod -n cnpg-test pg-test-1
+kubectl get pods -n cnpg-test -w                    # pg-test-1 kommt wieder (Strg+C)
+kubectl exec -n cnpg-test pg-test-1 -- psql -U postgres -d app -c 'select * from t'   # 42
+```
+
+Aufräumen (der Namespace samt allem darin, auch dem Volume):
+
+```bash
+kubectl delete namespace cnpg-test
+```
