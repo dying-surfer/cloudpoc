@@ -349,3 +349,76 @@ helm rollback cloudpoc 1 -n staging --wait  # zurück zum alten Banner
 
 Der Pod wird ausgetauscht, weil das Pod-Template eine Prüfsumme der ConfigMap trägt
 (`checksum/config`). Ohne sie bliebe der alte Pod mit der alten Datei stehen.
+
+## 6. Backend und Datenbank
+
+Dazu kommen im Chart:
+
+| Datei                                | Objekt          | Aufgabe                                                        |
+|--------------------------------------|-----------------|----------------------------------------------------------------|
+| `templates/db-cluster.yaml`          | CNPG `Cluster`  | Postgres 17 (`db.mode=cnpg`), wie der Test-Cluster aus Abschnitt 4 |
+| `templates/backend-deployment.yaml`  | Deployment      | FrankenPHP-Pods, `DATABASE_URL` aus dem Secret des Operators    |
+| `templates/backend-service.yaml`     | Service         | Feste Adresse vor den Backend-Pods                             |
+| `templates/ingress.yaml`             | Ingress         | jetzt auch `/api`, `/healthz`, `/readyz` → Backend              |
+
+```
+Browser ─▶ Traefik ─┬─ /api, /healthz, /readyz ─▶ Service cloudpoc-backend ─▶ Pod FrankenPHP
+                    │                                                           │ DATABASE_URL
+                    │                                                           ▼
+                    │                                Service cloudpoc-db-rw ─▶ Pod cloudpoc-db-1 (Postgres)
+                    └─ / ──────────────────────────▶ Service cloudpoc-frontend ─▶ Pod nginx
+```
+
+Die Zugangsdaten zur DB erzeugt der Operator selbst (Secret `cloudpoc-db-app`), das Chart reicht
+nur das Passwort an das Backend weiter. Die DB trägt `helm.sh/resource-policy: keep`:
+`helm uninstall` lässt sie samt Daten stehen.
+
+### Secret fürs Backend
+
+`APP_SECRET` (Symfony) kommt wie das Pull-Secret vorerst von Hand in den Namespace, später per SOPS:
+
+```bash
+kubectl create secret generic cloudpoc-backend -n staging \
+  --from-literal=APP_SECRET=$(openssl rand -hex 32)
+```
+
+### Ausrollen
+
+```bash
+helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging \
+  --set image.tag=$(git rev-parse origin/main) --wait --timeout 5m
+
+kubectl get cluster,pods,svc,ingress -n staging
+```
+
+Reihenfolge im Cluster: Der Operator legt die DB an (`cloudpoc-db-1-initdb-…`, dann `cloudpoc-db-1`).
+Bis es das Secret `cloudpoc-db-app` gibt, steht der Backend-Pod auf `CreateContainerConfigError`;
+der kubelet versucht es weiter und startet ihn, sobald das Secret da ist. Kein Fehler, sondern das
+übliche „so lange wiederholen, bis es passt“.
+
+```bash
+curl -s http://192.168.122.51/readyz              # {"status":"ok",…}: Backend erreicht die DB
+curl -s http://192.168.122.51/api/tickets         # Fehler 500: Tabelle fehlt noch
+```
+
+### Migration einmal von Hand
+
+Die DB ist leer, das Schema fehlt. Automatisch per Job kommt im nächsten Schritt; einmal von Hand
+zeigt, was der Job tun wird: dasselbe Image, nur ein anderer Befehl.
+
+```bash
+kubectl exec -n staging deploy/cloudpoc-backend -- \
+  php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+curl -s http://192.168.122.51/api/tickets         # {"items":[],…}
+```
+
+Im Browser `http://192.168.122.51/`: Tickets anlegen, bearbeiten, löschen.
+
+**Daten überleben einen Neustart der DB:**
+
+```bash
+kubectl delete pod -n staging cloudpoc-db-1
+kubectl get pods -n staging -w                    # cloudpoc-db-1 kommt wieder (Strg+C)
+```
+
+Danach sind die Tickets noch da.

@@ -30,3 +30,27 @@ ingress:
   # Leer = jeder Hostname. Mehrere Umgebungen im selben Cluster brauchen
   # unterschiedliche Hosts, sonst kollidieren ihre Routen.
   host: ""
+
+backend:
+  replicas: 1
+  # Secret im Namespace mit dem Schlüssel APP_SECRET (Anlage: docs/k8s.md)
+  existingSecret: cloudpoc-backend
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+db:
+  # cnpg:     Postgres-Cluster per CloudNativePG-Operator, im selben Namespace
+  # external: fertige DB (z. B. Azure Flexible Server), DATABASE_URL aus einem Secret
+  mode: cnpg
+  cnpg:
+    # Mehr als 1 erst bei mehreren Nodes sinnvoll (Standbys auf anderen Maschinen)
+    instances: 1
+    image: ghcr.io/cloudnative-pg/postgresql:17
+    size: 1Gi
+  external:
+    # Secret mit dem Schlüssel DATABASE_URL (Doctrine-Format inkl. serverVersion)
+    existingSecret: ""

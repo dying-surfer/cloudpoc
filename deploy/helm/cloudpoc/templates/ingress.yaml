@@ -1,5 +1,10 @@
-# Eingang von außen, übernimmt die Rolle des nginx-Proxys aus dem Compose-Stack.
-# Vorerst nur das Frontend; /api und die Health-Endpoints folgen mit dem Backend.
+# Eingang von außen, übernimmt die Rolle des nginx-Proxys aus dem Compose-Stack:
+#   /api/…, /healthz, /readyz  → backend   ·   alles andere → frontend
+# Die Health-Endpoints müssen explizit ans Backend, sonst beantwortet sie der
+# SPA-Fallback des Frontends mit index.html und 200.
+# Prefix "/api" passt auf /api und /api/…, aber nicht auf /apifoo (ganze Pfadteile).
+{{- $backend := printf "%s-backend" (include "cloudpoc.fullname" .) }}
+{{- $frontend := printf "%s-frontend" (include "cloudpoc.fullname" .) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -11,11 +16,20 @@ spec:
   rules:
     - http:
         paths:
+          {{- range list "/api" "/healthz" "/readyz" }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $backend }}
+                port:
+                  name: http
+          {{- end }}
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "cloudpoc.fullname" . }}-frontend
+                name: {{ $frontend }}
                 port:
                   name: http
       {{- with .Values.ingress.host }}

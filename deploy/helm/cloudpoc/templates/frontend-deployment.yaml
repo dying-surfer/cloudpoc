@@ -51,6 +51,7 @@ spec:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           securityContext:
             {{- include "cloudpoc.containerSecurityContext" . | nindent 12 }}
+            readOnlyRootFilesystem: true
           volumeMounts:
             - name: config
               mountPath: /usr/share/nginx/html/config.json

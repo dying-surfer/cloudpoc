@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloudpoc.fullname" . }}-backend
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 8 }}
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      securityContext:
+        # User "app" aus dem Dockerfile
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: {{ include "cloudpoc.image" (dict "ctx" $ "component" "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "backend.existingSecret fehlt" .Values.backend.existingSecret }}
+                  key: APP_SECRET
+            {{- if eq .Values.db.mode "cnpg" }}
+            # Passwort aus dem Secret, das der Operator anlegt. $(DB_PASSWORD) in der
+            # nächsten Variable setzt Kubernetes selbst ein (nur für weiter oben
+            # definierte Variablen). Host: der Service <cluster>-rw zeigt immer auf
+            # den Primary.
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "cloudpoc.dbCluster" . }}-app
+                  key: password
+            - name: DATABASE_URL
+              value: postgresql://app:$(DB_PASSWORD)@{{ include "cloudpoc.dbCluster" . }}-rw:5432/app?serverVersion=17&charset=utf8
+            {{- else }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "db.external.existingSecret fehlt" .Values.db.external.existingSecret }}
+                  key: DATABASE_URL
+            {{- end }}
+          # readyz prüft auch die DB: Ohne DB bekommt der Pod keinen Traffic, wird
+          # aber nicht neu gestartet. healthz prüft nur, ob PHP antwortet; schlägt
+          # das fehl, startet Kubernetes den Container neu.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- include "cloudpoc.containerSecurityContext" . | nindent 12 }}
+            # Root-Dateisystem bleibt beschreibbar: Symfony schreibt zur Laufzeit in
+            # var/cache (beim Build vorgewärmt, ein leeres Volume würde das verdecken),
+            # Caddy in /data und /config. Der Code selbst gehört root und ist für "app"
+            # nur lesbar (siehe backend/Dockerfile).
+            readOnlyRootFilesystem: false

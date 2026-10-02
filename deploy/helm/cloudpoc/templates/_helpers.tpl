@@ -34,10 +34,14 @@ app.kubernetes.io/component: {{ .component }}
 {{- printf "%s/cloudpoc-%s:%s" .ctx.Values.image.registry .component (required "image.tag fehlt: voller Commit-SHA, z. B. --set image.tag=$(git rev-parse origin/main)" .ctx.Values.image.tag) -}}
 {{- end -}}
 
-{{/* Sicherheitseinstellungen für alle Container: kein root, keine Rechte-Ausweitung */}}
+{{/* Sicherheitseinstellungen für alle Container: keine Rechte-Ausweitung, keine Capabilities */}}
 {{- define "cloudpoc.containerSecurityContext" -}}
 allowPrivilegeEscalation: false
-readOnlyRootFilesystem: true
 capabilities:
   drop: [ALL]
+{{- end -}}
+
+{{/* Name des CNPG-Clusters; der Operator leitet daraus Services (-rw) und Secrets (-app) ab */}}
+{{- define "cloudpoc.dbCluster" -}}
+{{ include "cloudpoc.fullname" . }}-db
 {{- end -}}
