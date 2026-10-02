@@ -92,7 +92,7 @@ ip -4 addr                               # in der VM: 192.168.122.51
 
 ## 2. k3s installieren
 
-In der VM als `admin`:
+In der VM als `admin` (das netinst-Debian hat kein `curl`):
 
 ```bash
 sudo apt-get update && sudo apt-get install -y curl
@@ -104,13 +104,17 @@ Das Skript lädt das k3s-Binary (Kanal `stable`), richtet den systemd-Dienst `k3
 
 ```bash
 sudo systemctl status k3s          # active (running)
-sudo kubectl get nodes             # k3s   Ready   control-plane,master   …   v1.xx.x+k3s1
+sudo kubectl get nodes             # k3s   Ready   control-plane   …   v1.36.5+k3s1
 sudo kubectl get pods -A           # coredns, traefik, metrics-server, local-path-provisioner,
                                    # svclb-traefik: Running; helm-install-traefik*: Completed
 ```
 
-Die k3s-Version aus `get nodes` bitte notieren: Damit wissen wir, welche Kubernetes-Version
-das Chart mindestens unterstützen muss.
+Getestet mit **k3s v1.36.5+k3s1** (Oktober 2026), also Kubernetes 1.36. Gegen diese Version
+prüfen wir das Chart (`kubeconform`).
+
+`helm-install-traefik` zeigt oft 1–2 Restarts. Das ist normal: Der Job wartet darauf, dass
+`helm-install-traefik-crd` die Traefik-CRDs angelegt hat, scheitert bis dahin und wird neu gestartet.
+`traefik` und `svclb-traefik` stehen in der ersten Minute auf `ContainerCreating` (Image-Download).
 
 Traefik antwortet schon auf Port 80, hat aber noch keine Routen. Vom Host aus:
 
