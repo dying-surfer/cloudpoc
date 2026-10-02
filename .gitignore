@@ -13,6 +13,11 @@
 .env.*.local
 *.local.yaml
 secrets/
+# Ausnahme: mit sops verschlüsselte Kubernetes-Secrets (siehe .sops.yaml), nur *.sops.yaml
+!deploy/secrets/
+deploy/secrets/**
+!deploy/secrets/**/
+!deploy/secrets/**/*.sops.yaml
 
 # DB-Dumps (können echte Daten enthalten)
 db/dumps/
