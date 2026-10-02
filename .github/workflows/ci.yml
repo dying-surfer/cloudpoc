@@ -1,0 +1,87 @@
+# CI: dieselben Checks wie `make test`, je Teilprojekt ein Job (laufen parallel).
+# Images, Scan und Smoke-Test gegen den Stack kommen in eigenen Jobs dazu.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Ein neuer Push auf denselben Branch/PR bricht den alten, noch laufenden Lauf ab
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimalrechte für das GITHUB_TOKEN; Jobs, die mehr brauchen, erweitern das selbst
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (cs, phpstan, phpunit)
+    runs-on: ubuntu-latest
+    # Wie im Devcontainer: Postgres 17 als Wegwerf-DB, die Tests nutzen app_test
+    services:
+      db:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/app?serverVersion=17&charset=utf8
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_pgsql, intl, zip
+          coverage: none
+          tools: composer:v2
+      - name: Composer-Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --no-progress
+      - run: composer check
+
+  frontend:
+    name: Frontend (prettier, eslint, vitest, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+
+  e2e-check:
+    name: Smoke-Tests statisch (prettier, tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check

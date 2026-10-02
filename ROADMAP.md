@@ -92,7 +92,7 @@ Makefile                einheitliche Entry-Points
 **Fertig, wenn:** `podman compose up` die App bereitstellt und die Daten ein `down`/`up` überleben.
 
 ### M5 – CI mit GitHub Actions + GHCR
-- [ ] GitHub-Remote anlegen
+- [x] GitHub-Remote anlegen
 - [ ] `ci.yml` für PRs und Pushes: Lint, PHPStan, PHPUnit (Postgres-Service), Angular-Lint/Test/Build,
       Image-Build mit Cache, Trivy-Scan, Playwright-Smoke
 - [ ] Push der Images nach GHCR (`:sha`, `:main`)
