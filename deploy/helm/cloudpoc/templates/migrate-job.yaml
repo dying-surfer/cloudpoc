@@ -1,0 +1,54 @@
+# Migrationen als One-Shot-Job, wie "migrate" im Compose-Stack: dasselbe Image wie
+# das Backend, nur ein anderer Befehl. Ein Helm-Hook bestimmt den Zeitpunkt:
+#
+# - post-install: Beim ersten Install gibt es die DB erst, wenn Helm die normalen
+#   Objekte angelegt hat. Ein pre-install-Hook liefe davor und wartete vergeblich.
+#   Bis der Job durch ist, liefert die API kurz 500 (Tabellen fehlen).
+# - pre-upgrade: Bei jedem weiteren Deploy migriert der Job, BEVOR die neuen
+#   Backend-Pods starten. Scheitert er, bricht helm upgrade ab und die alten Pods
+#   laufen weiter. Deshalb müssen Migrationen rückwärtskompatibel sein
+#   (expand/contract): Die alten Pods laufen kurz gegen das neue Schema.
+#
+# helm rollback dreht Migrationen nicht zurück.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "cloudpoc.fullname" . }}-migrate
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    helm.sh/hook: post-install,pre-upgrade
+    # Den Job des letzten Deploys erst wegräumen, wenn ein neuer kommt. Bis dahin
+    # bleiben seine Logs lesbar: kubectl logs job/<release>-migrate
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  # Fehlversuche (z. B. DB noch nicht bereit) wiederholt Kubernetes mit wachsender
+  # Pause (10 s, 20 s, 40 s, …), insgesamt höchstens 10 Minuten
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "migrate") | nindent 8 }}
+    spec:
+      # Bei Fehler einen neuen Pod statt Neustart im selben: Jeder Versuch bleibt
+      # mit seinen Logs sichtbar (kubectl get pods)
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: {{ include "cloudpoc.image" (dict "ctx" $ "component" "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["php", "bin/console", "doctrine:migrations:migrate", "--no-interaction", "--allow-no-migration"]
+          env:
+            {{- include "cloudpoc.backendEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- include "cloudpoc.containerSecurityContext" . | nindent 12 }}

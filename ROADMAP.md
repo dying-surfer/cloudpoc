@@ -118,7 +118,7 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 
 ### M7 – Kubernetes: Helm-Chart & k3s
 - [ ] Helm-Chart: Deployments, Services, Ingress, ConfigMap (`config.json`), Migrations-Job als
-      `pre-upgrade`-Hook, Probes, Resource-Limits, HPA + PDB (prod)
+      Hook (`post-install` + `pre-upgrade`), Probes, Resource-Limits, HPA + PDB (prod)
 - [ ] `values.db.mode`: `cnpg` (CloudNativePG mit 1 Instanz, in Prod mit Backup/PITR; Anzahl als Value,
       Replikas erst bei mehreren Nodes sinnvoll)
       oder `external` (Managed DB)

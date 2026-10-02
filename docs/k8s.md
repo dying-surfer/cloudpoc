@@ -403,7 +403,7 @@ curl -s http://192.168.122.51/api/tickets         # Fehler 500: Tabelle fehlt no
 
 ### Migration einmal von Hand
 
-Die DB ist leer, das Schema fehlt. Automatisch per Job kommt im nächsten Schritt; einmal von Hand
+Die DB ist leer, das Schema fehlt. Seit Abschnitt 7 erledigt das ein Job automatisch; einmal von Hand
 zeigt, was der Job tun wird: dasselbe Image, nur ein anderer Befehl.
 
 ```bash
@@ -422,3 +422,52 @@ kubectl get pods -n staging -w                    # cloudpoc-db-1 kommt wieder (
 ```
 
 Danach sind die Tickets noch da.
+
+## 7. Migrationen als Job
+
+`templates/migrate-job.yaml` ist ein **Job**: ein Pod, der einmal bis zum Ende läuft, hier mit
+dem Backend-Image und `doctrine:migrations:migrate`. Wann er läuft, bestimmt ein **Helm-Hook**
+(Annotation `helm.sh/hook`), ein Objekt, das Helm zu einem festen Zeitpunkt anlegt und auf
+dessen Ende es wartet:
+
+| Hook           | Wann                                   | Warum so                                                    |
+|----------------|----------------------------------------|-------------------------------------------------------------|
+| `post-install` | erster Install, nach allen Objekten    | Die DB entsteht erst mit dem Install. Ein `pre-install`-Hook liefe davor und wartete vergeblich |
+| `pre-upgrade`  | jeder weitere Deploy, vor allem anderen | Neue Backend-Pods finden das neue Schema schon vor           |
+
+Scheitert der Job bei einem Upgrade, bricht `helm upgrade` ab, und die alten Pods laufen weiter
+(gegen ein vielleicht schon teilweise migriertes Schema, deshalb rückwärtskompatible Migrationen).
+`helm rollback` dreht Migrationen nicht zurück.
+
+Verworfen: Migration als initContainer im Backend-Pod. Bei mehreren Replikas migrierten mehrere
+Pods gleichzeitig, und bei jedem Neustart eines Pods liefe sie wieder mit.
+
+### Erster Install ohne Handarbeit
+
+Release und DB entfernen und neu installieren. Die DB muss extra weg, weil sie
+`helm.sh/resource-policy: keep` trägt. Die Secrets `ghcr-pull` und `cloudpoc-backend` bleiben
+(sie gehören nicht zum Release):
+
+```bash
+helm uninstall cloudpoc -n staging
+kubectl delete cluster cloudpoc-db -n staging     # löscht auch das Volume: Daten weg
+kubectl get all,pvc -n staging                    # leer (bis auf evtl. auslaufende Pods)
+
+helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging \
+  --set image.tag=$(git rev-parse origin/main) --wait --timeout 5m
+```
+
+Ablauf: Helm legt DB, Deployments, Services und Ingress an und wartet (`--wait`), bis alles bereit
+ist. Dann startet der Hook den Job:
+
+```bash
+kubectl get jobs,pods -n staging                  # cloudpoc-migrate 1/1 Complete
+kubectl logs -n staging job/cloudpoc-migrate      # [notice] Migrating up to …
+curl -s http://192.168.122.51/api/tickets         # {"items":[],…}, ohne kubectl exec
+```
+
+### Upgrade
+
+Bei jedem weiteren `helm upgrade` läuft der Job zuerst. Gibt es nichts zu migrieren, meldet er das
+und ist nach Sekunden fertig. Der Job des vorigen Deploys bleibt
+bis zum nächsten stehen (`hook-delete-policy: before-hook-creation`), damit seine Logs lesbar bleiben.

@@ -30,30 +30,7 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: APP_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ required "backend.existingSecret fehlt" .Values.backend.existingSecret }}
-                  key: APP_SECRET
-            {{- if eq .Values.db.mode "cnpg" }}
-            # Passwort aus dem Secret, das der Operator anlegt. $(DB_PASSWORD) in der
-            # nächsten Variable setzt Kubernetes selbst ein (nur für weiter oben
-            # definierte Variablen). Host: der Service <cluster>-rw zeigt immer auf
-            # den Primary.
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "cloudpoc.dbCluster" . }}-app
-                  key: password
-            - name: DATABASE_URL
-              value: postgresql://app:$(DB_PASSWORD)@{{ include "cloudpoc.dbCluster" . }}-rw:5432/app?serverVersion=17&charset=utf8
-            {{- else }}
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ required "db.external.existingSecret fehlt" .Values.db.external.existingSecret }}
-                  key: DATABASE_URL
-            {{- end }}
+            {{- include "cloudpoc.backendEnv" . | nindent 12 }}
           # readyz prüft auch die DB: Ohne DB bekommt der Pod keinen Traffic, wird
           # aber nicht neu gestartet. healthz prüft nur, ob PHP antwortet; schlägt
           # das fehl, startet Kubernetes den Container neu.
