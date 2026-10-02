@@ -45,5 +45,8 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - UI-Texte auf Deutsch, Code-Kommentare auf Deutsch wie im Bestand.
   - Checks: `cd frontend && npm run check` (prettier, eslint, vitest, build). In Komponententests mit
     `HttpTestingController` vor `expectOne()` nicht `whenStable()` aufrufen (wartet auf den Request).
-- **M4** (Prod-Images & Compose-Stack): als Nächstes. Images bauen geht nur auf dem Host (kein Podman im
-  Container), dafür vorher eine Lösung mit dem User besprechen.
+- **M4** (Prod-Images & Compose-Stack): in Arbeit auf `m4-prod-images`. Entscheidung: Claude schreibt
+  Dockerfiles und `make`-Targets, der **User baut und testet auf dem Host** und meldet die Ausgabe zurück
+  (kein Podman-Socket im Devcontainer, damit Claude weiterhin nur das Repo sieht). Vorher so viel wie
+  möglich ohne Podman prüfen (z. B. Build-Schritte in einer Kopie im Scratchpad nachspielen).
+  - Backend-Image: `backend/Dockerfile` (FrankenPHP, Multi-Stage, User `app`, Port 8080), `make backend-image`.

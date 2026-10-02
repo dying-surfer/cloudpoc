@@ -69,6 +69,16 @@ frontend-install: ## npm-Abhängigkeiten des Frontends installieren (exakt nach 
 frontend-check: ## Frontend: Prettier, ESLint, Vitest, Produktions-Build
 	@$(FRONTEND) npm run check
 
+# --- Prod-Images (nur auf dem Host, braucht podman) ---------------------------
+# Lokal heißt der Tag "local"; in CI später der Git-SHA (make backend-image TAG=…).
+
+TAG ?= local
+
+.PHONY: backend-image
+
+backend-image: ## Prod-Image des Backends bauen (cloudpoc-backend:$(TAG))
+	podman build -t cloudpoc-backend:$(TAG) backend
+
 # --- Alles ---------------------------------------------------------------------
 
 test: backend-check frontend-check ## Alle Checks und Tests (Backend und Frontend)
