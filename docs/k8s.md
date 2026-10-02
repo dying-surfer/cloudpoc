@@ -341,12 +341,18 @@ aber einen Fehler. Das ist erwartet, das Backend fehlt noch.
 eine neue Release-Version erzeugt und Kubernetes die Pods austauscht:
 
 ```bash
-helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reuse-values \
+helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reset-then-reuse-values \
   --set frontend.config.banner="STAGING · geändert" --wait
 kubectl get pods -n staging                 # neuer Pod-Name: neue Config = neues Pod-Template
 helm history cloudpoc -n staging            # Revision 1 und 2
 helm rollback cloudpoc 1 -n staging --wait  # zurück zum alten Banner
 ```
+
+`--reset-then-reuse-values` übernimmt die Werte, die beim letzten Mal per `--set`/`-f` gesetzt
+wurden (hier `image.tag`), und nimmt für alles andere die **aktuellen** Standardwerte des Charts.
+Das ältere `--reuse-values` übernimmt dagegen den kompletten alten Wertestand: Neue Werte, die
+ein späterer Chart-Stand einführt, fehlen dann, und die Templates brechen ab (Fehlersuche in
+`docs/dev.md`).
 
 Der Pod wird ausgetauscht, weil das Pod-Template eine Prüfsumme der ConfigMap trägt
 (`checksum/config`). Ohne sie bliebe der alte Pod mit der alten Datei stehen.
@@ -528,7 +534,7 @@ Soll das bei einer heiklen Migration gar nicht vorkommen, das Backend vorher von
 
 ```bash
 kubectl scale deployment cloudpoc-backend -n staging --replicas=0
-helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reuse-values \
+helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reset-then-reuse-values \
   --set image.tag=<SHA> --set strategy=Recreate --wait
 ```
 
@@ -547,7 +553,7 @@ tun. Mit HPA fehlt `replicas` im Deployment, sonst setzte jedes `helm upgrade` d
 Probehalber mit den Prod-Werten in `staging`:
 
 ```bash
-helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reuse-values \
+helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reset-then-reuse-values \
   -f deploy/helm/cloudpoc/values-prod.yaml --wait
 kubectl get pods,pdb,hpa -n staging              # je 2 Frontend- und Backend-Pods
 ```
@@ -578,5 +584,5 @@ sort ~/rollout-codes.txt | uniq -c               # nur 200
 `--set preStopSleepSeconds=0` (vereinzelt 502) oder `--set strategy=Recreate` (eine Lücke mit
 Fehlern). Danach mit `--set preStopSleepSeconds=5 --set strategy=RollingUpdate` zurück.
 
-Zurück auf die Staging-Werte: `helm upgrade` ohne `-f values-prod.yaml` und ohne `--reuse-values`,
+Zurück auf die Staging-Werte: `helm upgrade` ohne `-f values-prod.yaml` und ohne `--reset-then-reuse-values`,
 nur mit `--set image.tag=…`.

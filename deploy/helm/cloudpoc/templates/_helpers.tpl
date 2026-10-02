@@ -88,7 +88,7 @@ rollingUpdate:
 {{- else if eq .Values.strategy "Recreate" -}}
 type: Recreate
 {{- else -}}
-{{- fail (printf "strategy muss RollingUpdate oder Recreate sein, nicht %q" .Values.strategy) -}}
+{{- fail (printf "strategy muss RollingUpdate oder Recreate sein, nicht %q" (.Values.strategy | default "" | toString)) -}}
 {{- end -}}
 {{- end -}}
 
