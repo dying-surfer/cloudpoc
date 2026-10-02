@@ -17,7 +17,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
 - Claude läuft **im Devcontainer** (Service `workspace`, User `dev`, Repo unter `/workspaces/cloudpoc`).
 - Host: Bluefin (atomares Fedora) mit **rootless Podman**, kein Docker.
 - **Im Container gibt es kein Podman.** Container neu bauen oder Images bauen kann nur der User auf dem Host
-  (VS Code: *Dev Containers: Rebuild Container*). Ab M4 (Prod-Images) dafür eine Lösung besprechen.
+  (VS Code: *Dev Containers: Rebuild Container*). Images bauen und Stack testen: siehe M4 unten.
 - Die `make dev-*`-Targets gehen nur auf dem **Host** (sie rufen `podman compose` auf). Die `make backend-*`-Targets
   und `make test` gehen überall: mit Podman per `exec` im Devcontainer, ohne Podman direkt.
 - DB: Service `db` (postgres:17) als Wegwerf-DB auf tmpfs. `psql` ist über `PGHOST`/`PGUSER`/… vorkonfiguriert,
@@ -45,7 +45,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - UI-Texte auf Deutsch, Code-Kommentare auf Deutsch wie im Bestand.
   - Checks: `cd frontend && npm run check` (prettier, eslint, vitest, build). In Komponententests mit
     `HttpTestingController` vor `expectOne()` nicht `whenStable()` aufrufen (wartet auf den Request).
-- **M4** (Prod-Images & Compose-Stack): in Arbeit auf `m4-prod-images`. Entscheidung: Claude schreibt
+- **M4** (Prod-Images & Compose-Stack): fertig, in `main` gemergt. Entscheidung: Claude schreibt
   Dockerfiles und `make`-Targets, der **User baut und testet auf dem Host** und meldet die Ausgabe zurück
   (kein Podman-Socket im Devcontainer, damit Claude weiterhin nur das Repo sieht). Vorher so viel wie
   möglich ohne Podman prüfen (z. B. Build-Schritte in einer Kopie im Scratchpad nachspielen).
@@ -58,3 +58,6 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Stack: `deploy/compose/` (proxy = nginx, frontend, backend, migrate als One-Shot, db mit Volume), Port 8088,
     Secrets in `deploy/compose/.env` (nicht im Repo, Vorlage `.env.example`). `make images`, `make stack-up` usw.
     Reverse Proxy: nginx (Kriterium des Users: production-ready und verbreitet); Edge-Proxy in M6 voraussichtlich Traefik.
+  - Smoke-Tests: `e2e/` (Playwright, nur Zusammenspiel prüfen). `make stack-smoke` (Host) läuft im Playwright-Image
+    im Compose-Netz gegen `http://proxy:8080`; `make e2e-check` statisch, Teil von `make test`. Im Devcontainer
+    startet Chromium nicht (Systembibliotheken fehlen). `@playwright/test` exakt pinnen, der Image-Tag folgt daraus.
