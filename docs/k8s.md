@@ -194,13 +194,14 @@ helm search repo cnpg/cloudnative-pg              # CHART VERSION und APP VERSIO
 
 helm upgrade --install cnpg cnpg/cloudnative-pg \
   --namespace cnpg-system --create-namespace \
-  --version <CHART VERSION aus der Suche> --wait
+  --version 0.29.1 --wait
 ```
 
 - `upgrade --install`: installiert beim ersten Mal, aktualisiert danach. Derselbe Befehl taugt
   also für beides, deshalb nutzen ihn Skripte und Workflows gern.
 - `--version`: Chart-Version festhalten, sonst nimmt Helm die neueste, und zwei Installationen
-  sind nicht mehr gleich.
+  sind nicht mehr gleich. Getestet mit Chart 0.29.1 = Operator 1.30.1 (Oktober 2026);
+  neuere Versionen zeigt `helm search repo cnpg/cloudnative-pg`.
 - `--wait`: kehrt erst zurück, wenn der Operator-Pod bereit ist.
 
 Prüfen:
