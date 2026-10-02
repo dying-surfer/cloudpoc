@@ -226,3 +226,65 @@ sudo systemctl status 'actions.runner.*'      # der Runner ist auch wieder da
 
 Dass die Container nach dem Reboot überhaupt starten, liegt am Dienst `docker.service`, den das
 Debian-Paket automatisch aktiviert (`systemctl is-enabled docker` → `enabled`).
+
+## 8. Logs
+
+### Einmalig: Container-Logs ins Journal
+
+Standardmäßig schreibt Docker die Logs als JSON-Datei neben den Container. Das hat zwei Haken:
+Die Datei wird nie rotiert, und sie verschwindet mit dem Container. Jeder Deploy erzeugt `backend`,
+`frontend` und `migrate` neu, danach ist zum Beispiel ein Absturz von gestern nicht mehr nachzulesen.
+
+Mit dem Log-Treiber `journald` landen die Logs im systemd-Journal: Es rotiert selbst (Standard:
+höchstens 10 % des Dateisystems, maximal 4 GB) und behält die Logs über Deploys hinweg, weil der
+Container-Name (`cloudpoc-backend-1`) gleich bleibt. `docker logs` funktioniert weiter.
+
+```bash
+# Journal über Reboots behalten (unter Debian normalerweise schon so)
+ls -d /var/log/journal || { sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald; }
+
+# Log-Treiber für alle neuen Container; tag = Container-Name statt ID in den Logzeilen
+echo '{ "log-driver": "journald", "log-opts": { "tag": "{{.Name}}" } }' \
+  | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+
+Achtung: Der Treiber gilt nur für **neu erzeugte** Container, `db` und `proxy` behalten sonst den
+alten. Also den Stack einmal entfernen (das DB-Volume bleibt) und auf GitHub den letzten Lauf von
+*Actions → Deploy* per *Re-run all jobs* wiederholen:
+
+```bash
+sudo docker compose -p cloudpoc down
+# … Deploy auf GitHub neu starten, dann:
+sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Type}}' $(sudo docker ps -aq)   # überall journald
+```
+
+### Container-Logs ansehen
+
+Live und kurzfristig über Compose. `-p cloudpoc` ist der Projektname aus `name: cloudpoc`, damit
+findet Compose die Container ohne `compose.yaml` und `.env`:
+
+```bash
+sudo docker compose -p cloudpoc logs -f                 # alle Services, live (Strg+C beendet)
+sudo docker compose -p cloudpoc logs -f backend proxy   # nur bestimmte
+sudo docker compose -p cloudpoc logs --since 10m db     # die letzten 10 Minuten
+sudo docker compose -p cloudpoc logs migrate            # was der letzte Deploy migriert hat
+```
+
+Rückblickend, auch über Deploys und Reboots hinweg, über das Journal:
+
+```bash
+sudo journalctl -t cloudpoc-backend-1 --since yesterday        # ein Container
+sudo journalctl -t cloudpoc-migrate-1                          # alle Migrationsläufe aller Deploys
+sudo journalctl -t cloudpoc-proxy-1 -t cloudpoc-backend-1 -f   # mehrere, live
+sudo journalctl -t cloudpoc-backend-1 -b -1                    # nur aus dem vorigen Boot
+```
+
+### Deploy und Runner
+
+- **Deploy-Lauf:** auf GitHub unter *Actions → Deploy → Lauf → Job*, mit der Ausgabe jedes Schritts
+  (`make deploy`, Readiness-Check, `make stack-ps`).
+- **Runner-Dienst** (Verbindung zu GitHub, angenommene Jobs):
+  `sudo journalctl -u 'actions.runner.*' -f`. Ausführlicher: `/home/runner/actions-runner/_diag/`.
+- **Docker-Daemon**, z. B. wenn nach einem Reboot ein Container nicht hochkommt:
+  `sudo journalctl -u docker`.
