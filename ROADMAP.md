@@ -124,7 +124,7 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
       Replikas erst bei mehreren Nodes sinnvoll)
       oder `external` (Managed DB)
 - [ ] Stagings als Namespaces `staging-<name>`, optional Preview-Envs pro PR
-- [ ] Secrets mit SOPS (age)
+- [x] Secrets mit SOPS (age): `deploy/secrets/<ns>/`, `make k8s-secrets`, `make secrets-check`
 - [ ] Deploy-Workflows um einen Helm-Pfad erweitern
 
 **Fertig, wenn:** Ein Rolling Update ohne Downtime läuft und die CNPG-Recovery in einen neuen Namespace funktioniert.

@@ -312,7 +312,7 @@ kubectl create secret docker-registry ghcr-pull -n staging \
 ```
 
 Das Secret gilt nur in diesem Namespace (jede Umgebung braucht ihr eigenes). Später verwaltet
-SOPS solche Secrets im Repo, vorerst legen wir es von Hand an.
+SOPS solche Secrets verschlüsselt im Repo (Abschnitt 9), für den Anfang legen wir es von Hand an.
 
 ### Installieren
 
@@ -385,7 +385,7 @@ nur das Passwort an das Backend weiter. Die DB trägt `helm.sh/resource-policy: 
 
 ### Secret fürs Backend
 
-`APP_SECRET` (Symfony) kommt wie das Pull-Secret vorerst von Hand in den Namespace, später per SOPS:
+`APP_SECRET` (Symfony) kommt wie das Pull-Secret erst einmal von Hand in den Namespace (per SOPS: Abschnitt 9):
 
 ```bash
 kubectl create secret generic cloudpoc-backend -n staging \
@@ -615,3 +615,140 @@ kubectl logs -n kube-system deploy/traefik -f | grep /api/
 ```
 
 Die vorletzte Angabe ist der Pod, an den Traefik den Request geschickt hat, die letzte die Dauer.
+
+## 9. Secrets mit SOPS
+
+### Welche Secrets es gibt
+
+| Secret             | Inhalt                       | Woher der Wert kommt                      | Verwaltet über                 |
+|--------------------|------------------------------|-------------------------------------------|--------------------------------|
+| `cloudpoc-db-app`  | DB-Passwort (User `app`)     | CNPG-Operator, zufällig beim ersten Start | Operator (nicht im Repo)       |
+| `cloudpoc-backend` | `APP_SECRET` (Symfony)       | von uns erzeugt (`openssl rand`)          | SOPS, `deploy/secrets/<ns>/`   |
+| `ghcr-pull`        | Token zum Image-Pull (GHCR)  | GitHub, Token (classic) `read:packages`   | SOPS, `deploy/secrets/<ns>/`   |
+
+Das DB-Passwort braucht kein SOPS: Niemand außerhalb des Clusters muss es vorher kennen. Der
+Operator erzeugt es, legt damit die Rolle `app` an und schreibt es ins Secret. Das Backend-Deployment
+enthält nur einen Verweis darauf, der kubelet setzt den Wert beim Start des Pods als
+Umgebungsvariable (Abschnitt 6). Alles, was von außen kommt, liegt dagegen verschlüsselt im Repo.
+
+Secrets im Cluster sind nur base64-kodiert, nicht verschlüsselt (auch nicht in der Datenbank von k3s).
+Geschützt sind sie über die Rechte: Wer `get secret` darf (unsere kubeconfig ist Cluster-Admin),
+root auf der VM und wer im Namespace Pods starten darf, kann sie lesen.
+
+### Wie SOPS funktioniert
+
+`sops` verschlüsselt in einer YAML-Datei nur die **Werte**, die Schlüssel bleiben lesbar. Welche
+Werte, steht in `.sops.yaml` im Repo: unter `deploy/secrets/staging/` nur `data`/`stringData`.
+Name, Namespace und Typ des Secrets sind also im Diff sichtbar, der Inhalt nicht.
+
+Verschlüsselt wird mit **age**, einem Schlüsselpaar:
+
+- öffentlicher Schlüssel (`age1…`): steht in `.sops.yaml`, damit kann jeder verschlüsseln
+- privater Schlüssel: nur auf dem Host in `~/.config/sops/age/keys.txt` (dort sucht sops ihn),
+  zusätzlich im Passwortmanager. Nur damit lässt sich entschlüsseln. Nie ins Repo oder in den
+  Devcontainer.
+
+**Ist der private Schlüssel weg, sind die Dateien im Repo wertlos.** Dann neues Schlüsselpaar,
+`.sops.yaml` anpassen und alle Werte neu erzeugen (Token neu ausstellen, neues `APP_SECRET`).
+
+Die `.gitignore` sperrt jeden Ordner `secrets/`, mit einer Ausnahme: unter `deploy/secrets/` dürfen
+`*.sops.yaml`-Dateien ins Repo. `make secrets-check` (Teil von `make test` und CI) prüft, dass sie
+wirklich verschlüsselt sind, ohne sops oder Schlüssel.
+
+### Einrichten (einmal, Host)
+
+```bash
+brew install sops age
+mkdir -p ~/.config/sops/age
+age-keygen -o ~/.config/sops/age/keys.txt       # gibt "Public key: age1…" aus
+chmod 600 ~/.config/sops/age/keys.txt
+age-keygen -y ~/.config/sops/age/keys.txt       # öffentlichen Schlüssel später wieder anzeigen
+```
+
+Getestet mit sops 3.13.3. Den Inhalt von `keys.txt` in den Passwortmanager.
+
+### Anwenden
+
+Im Repo auf dem Host (sops findet `.sops.yaml` nur von dort), mit `KUBECONFIG`:
+
+```bash
+make k8s-secrets NS=staging
+```
+
+Für jede Datei in `deploy/secrets/staging/`: `sops -d … | kubectl apply -f -`. Der Klartext läuft
+nur durch die Pipe. Beim ersten Mal auf ein von Hand angelegtes Secret warnt `kubectl apply`
+wegen der fehlenden Annotation `last-applied-configuration` und ergänzt sie, danach ist Ruhe.
+
+In einem neuen Namespace kommt das vor dem ersten `helm upgrade --install`, sonst fehlen dem
+Backend `APP_SECRET` und dem Cluster die Zugangsdaten für GHCR.
+
+### Neues Secret anlegen
+
+Manifest per `--dry-run=client` erzeugen (legt nichts an) und sofort verschlüsseln. Zwischen den
+beiden Befehlen steht der Klartext kurz auf der Platte, deshalb erst danach committen:
+
+```bash
+kubectl create secret generic <name> -n staging --from-literal=KEY=<wert> \
+  --dry-run=client -o yaml > deploy/secrets/staging/<name>.sops.yaml
+sops -e -i deploy/secrets/staging/<name>.sops.yaml
+make secrets-check
+```
+
+Die beiden vorhandenen Dateien sind so aus den von Hand angelegten Secrets entstanden (Wert per
+`kubectl get secret … -o jsonpath='{.data.KEY}' | base64 -d` aus dem Cluster gelesen).
+
+### Werte ändern (Passwortwechsel)
+
+Grundablauf für alles, was per SOPS kommt:
+
+```bash
+sops edit deploy/secrets/staging/<name>.sops.yaml   # öffnet $EDITOR mit Klartext, verschlüsselt beim Speichern
+make k8s-secrets NS=staging
+git commit …
+```
+
+Mit `sops edit` stehen die Werte als Klartext unter `data`, aber base64-kodiert (so steht es im
+Secret). Einfacher: den Wert unter `stringData` als Klartext eintragen und den alten Eintrag unter
+`data` löschen, Kubernetes kodiert selbst.
+
+**Wichtig:** Umgebungsvariablen liest ein Pod nur beim Start. Ein geändertes Secret kommt erst nach
+einem Neustart an, `kubectl apply` allein ändert an laufenden Pods nichts.
+
+**`APP_SECRET`:**
+
+```bash
+openssl rand -hex 32                                # neuen Wert erzeugen, per sops edit eintragen
+make k8s-secrets NS=staging
+kubectl rollout restart deployment/cloudpoc-backend -n staging
+```
+
+Der Neustart läuft als Rolling Update (Abschnitt 8). Symfony signiert damit z. B. CSRF-Tokens und
+Login-Links, die werden ungültig. Unsere API nutzt das bisher nicht.
+
+**GHCR-Token** (läuft ab, Ablaufdatum aus Abschnitt 5 im Kalender notieren): neuen Token anlegen
+(Link in Abschnitt 5), Datei neu erzeugen und verschlüsseln. Die Docker-Config ist JSON in base64,
+von Hand editieren lohnt nicht:
+
+```bash
+kubectl create secret docker-registry ghcr-pull -n staging \
+  --docker-server=ghcr.io --docker-username=dying-surfer --docker-password='<neuer Token>' \
+  --dry-run=client -o yaml > deploy/secrets/staging/ghcr-pull.sops.yaml
+sops -e -i deploy/secrets/staging/ghcr-pull.sops.yaml
+make k8s-secrets NS=staging
+```
+
+Kein Neustart nötig: Das Pull-Secret liest der kubelet bei jedem Image-Pull neu. Danach den alten
+Token auf GitHub löschen. Ein abgelaufener Token fällt erst beim nächsten Pull auf (neuer Pod auf
+einem Node ohne das Image, neuer Tag), als `ImagePullBackOff`.
+
+**DB-Passwort** (Operator): nicht über SOPS. Laut CNPG-Doku überträgt der Operator ein im Secret
+geändertes Passwort in die Datenbank. **Bei uns noch nicht getestet.** Ablauf dann:
+
+```bash
+kubectl patch secret cloudpoc-db-app -n staging --type merge \
+  -p "{\"stringData\":{\"password\":\"$(openssl rand -hex 24)\"}}"
+kubectl rollout restart deployment/cloudpoc-backend -n staging
+```
+
+Das Secret enthält das Passwort zusätzlich in `uri`, `jdbc-uri` und `pgpass`. Das Chart nutzt nur
+`password`.

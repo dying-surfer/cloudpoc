@@ -88,7 +88,11 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     `kubectl`/`helm` nur auf dem Host (kubeconfig per `KUBECONFIG`), nie im Devcontainer.
   - Chart `deploy/helm/cloudpoc/`: `image.tag` Pflicht (Commit-SHA), `db.mode` `cnpg` | `external`,
     Migrationen als Hook-Job `post-install,pre-upgrade`, `values-prod.yaml` (HPA, PDB).
-    Pull-Secret `ghcr-pull` und `cloudpoc-backend` (APP_SECRET) vorerst von Hand im Namespace `staging`.
+    Secrets `ghcr-pull` und `cloudpoc-backend` (APP_SECRET) per SOPS (age) in `deploy/secrets/<ns>/`, anwenden mit
+    `make k8s-secrets NS=staging` (Host). Privater Schlüssel nur auf dem Host, nie im Devcontainer. Das DB-Passwort
+    erzeugt der CNPG-Operator (Secret `cloudpoc-db-app`), nicht im Repo.
   - Prüfen: `make helm-check` (`deploy/helm/check.sh`, alle Werte-Varianten). Neue Varianten dort eintragen.
+    `make secrets-check` prüft, dass alles unter `deploy/secrets/` verschlüsselt ist.
   - Upgrades mit `--reset-then-reuse-values`, nie `--reuse-values` (übernimmt neue Chart-Defaults nicht).
-  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, SOPS, Deploy-Workflow.
+  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Deploy-Workflow,
+    DB-Passwortwechsel (CNPG) testen (Abschnitt 9).
