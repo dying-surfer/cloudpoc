@@ -8,7 +8,8 @@ Entwickelt wird in einem Devcontainer mit zwei Services:
 | `db`        | PostgreSQL 17 als **Wegwerf-DB**: Daten liegen im RAM (tmpfs)       |
 
 Die DB ist nach jedem Neustart des Containers leer. Echte Daten gehören nicht hierher,
-höchstens anonymisierte Dumps (ab M4: `make db-import`).
+höchstens anonymisierte Dumps: `make dev-db-import FILE=db/dumps/cloudpoc-anon-….dump`
+(erzeugt mit `make db-dump-anon` aus dem Stack).
 
 ## Voraussetzungen (Podman statt Docker)
 

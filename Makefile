@@ -116,13 +116,14 @@ DB_EXEC   = $(STACK) exec -T db
 DUMP_DIR  = db/dumps
 STAMP     := $(shell date +%Y%m%d-%H%M%S)
 DUMP_FILE := $(DUMP_DIR)/cloudpoc-$(STAMP).dump
+ANON_FILE := $(DUMP_DIR)/cloudpoc-anon-$(STAMP).dump
 
 # $(call confirm,Text): fragt nach und bricht ab, wenn nicht mit "j" geantwortet wird
 define confirm
 	@if [ "$(YES)" != 1 ]; then printf '%s Weiter? [j/N] ' "$(1)"; read a; [ "$$a" = j ]; fi
 endef
 
-.PHONY: db-reset db-dump db-import
+.PHONY: db-reset db-dump db-dump-anon db-import dev-db-import
 
 db-reset: ## Stack-DB leeren und neu migrieren (alle Daten weg!)
 	$(call confirm,Alle Daten in der Stack-DB werden gelöscht.)
@@ -141,6 +142,33 @@ db-import: ## Dump in die Stack-DB einspielen, ersetzt die Daten (FILE=db/dumps/
 	$(DB_EXEC) pg_restore -U app -d app --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error < $(FILE)
 	@# Der Dump kann älter sein als der Code: fehlende Migrationen nachziehen
 	$(STACK) run --rm migrate
+
+db-dump-anon: ## Anonymisierten Dump der Stack-DB schreiben (für Dev/Staging)
+	@mkdir -p $(DUMP_DIR)
+	@# Kopie als anon_tmp anlegen; nur die Kopie wird anonymisiert. Die echten Daten
+	@# verlassen den db-Container nie, nur der anonymisierte Dump.
+	$(DB_EXEC) sh -c 'dropdb -U app --if-exists anon_tmp && createdb -U app anon_tmp \
+		&& pg_dump -U app -d app --format=custom | pg_restore -U app -d anon_tmp --no-owner --no-acl --exit-on-error'
+	$(DB_EXEC) psql -U app -d anon_tmp -q < db/anonymize.sql
+	$(DB_EXEC) pg_dump -U app -d anon_tmp --format=custom > $(ANON_FILE).tmp
+	$(DB_EXEC) dropdb -U app anon_tmp
+	@mv $(ANON_FILE).tmp $(ANON_FILE) && ls -lh $(ANON_FILE)
+
+# --- Datenbank im Devcontainer -----------------------------------------------------
+# Auf dem Host per exec im workspace, im Devcontainer direkt (psql & Co. nutzen PGHOST usw.).
+
+ifneq ($(shell command -v podman 2>/dev/null),)
+WORKSPACE = $(DEV_COMPOSE) exec -T -w /workspaces/cloudpoc workspace
+else
+WORKSPACE =
+endif
+
+dev-db-import: ## Anonymisierten Dump in die Dev-DB einspielen (FILE=db/dumps/cloudpoc-anon-….dump)
+	@test -n "$(FILE)" || { echo "FILE fehlt, z. B.: make dev-db-import FILE=db/dumps/cloudpoc-anon-….dump"; exit 1; }
+	@# Keine echten Daten in Dev: nur Dumps aus db-dump-anon (erkennbar am Namen)
+	@case "$(notdir $(FILE))" in *-anon-*) ;; *) echo "$(FILE) ist kein anonymisierter Dump (*-anon-*). Erst make db-dump-anon."; exit 1;; esac
+	$(WORKSPACE) pg_restore -d app --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error $(FILE)
+	$(BACKEND) php bin/console doctrine:migrations:migrate -n
 
 # --- Alles ---------------------------------------------------------------------
 
