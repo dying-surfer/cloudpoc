@@ -301,8 +301,8 @@ Dann auf dem Host:
 
 ```bash
 export KUBECONFIG=~/.kube/cloudpoc-k3s.yaml
-kubectl create namespace staging-demo
-kubectl create secret docker-registry ghcr-pull -n staging-demo \
+kubectl create namespace staging
+kubectl create secret docker-registry ghcr-pull -n staging \
   --docker-server=ghcr.io --docker-username=dying-surfer \
   --docker-password='<Token>'
 ```
@@ -317,7 +317,7 @@ Push auf `main`):
 
 ```bash
 git fetch
-helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging-demo \
+helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging \
   --set image.tag=$(git rev-parse origin/main) --wait
 ```
 
@@ -327,8 +327,8 @@ geben (kein `:latest`).
 Prüfen:
 
 ```bash
-helm list -n staging-demo                        # cloudpoc   deployed
-kubectl get deploy,pods,svc,ingress -n staging-demo
+helm list -n staging                        # cloudpoc   deployed
+kubectl get deploy,pods,svc,ingress -n staging
 curl -s http://192.168.122.51/config.json        # {"banner": "STAGING · k3s", …}
 curl -s http://192.168.122.51/ | head -5         # index.html der Angular-App
 ```
@@ -340,11 +340,11 @@ aber einen Fehler. Das ist erwartet, das Backend fehlt noch.
 eine neue Release-Version erzeugt und Kubernetes die Pods austauscht:
 
 ```bash
-helm upgrade cloudpoc deploy/helm/cloudpoc -n staging-demo --reuse-values \
+helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reuse-values \
   --set frontend.config.banner="STAGING · geändert" --wait
-kubectl get pods -n staging-demo                 # neuer Pod-Name: neue Config = neues Pod-Template
-helm history cloudpoc -n staging-demo            # Revision 1 und 2
-helm rollback cloudpoc 1 -n staging-demo --wait  # zurück zum alten Banner
+kubectl get pods -n staging                 # neuer Pod-Name: neue Config = neues Pod-Template
+helm history cloudpoc -n staging            # Revision 1 und 2
+helm rollback cloudpoc 1 -n staging --wait  # zurück zum alten Banner
 ```
 
 Der Pod wird ausgetauscht, weil das Pod-Template eine Prüfsumme der ConfigMap trägt
