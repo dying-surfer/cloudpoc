@@ -82,7 +82,7 @@ Makefile                einheitliche Entry-Points
 
 ### M4 – Prod-Images & lokaler Compose-Stack
 - [x] Backend-Dockerfile (FrankenPHP, Multi-Stage, `--no-dev`, Opcache, non-root)
-      (`.containerignore`: `backend/fixtures/`, `backend/tests/` gehören nicht ins Image)
+      (`.dockerignore`: `backend/fixtures/`, `backend/tests/` gehören nicht ins Image)
 - [x] Frontend-Dockerfile (Node-Build → nginx-unprivileged, SPA-Fallback)
 - [x] `deploy/compose/compose.yaml` mit Reverse Proxy, frontend, backend, migrate (one-shot) und
       postgres (benanntes Volume)
@@ -92,11 +92,11 @@ Makefile                einheitliche Entry-Points
 **Fertig, wenn:** `podman compose up` die App bereitstellt und die Daten ein `down`/`up` überleben.
 
 ### M5 – CI mit GitHub Actions + GHCR
-- [ ] GitHub-Remote anlegen
+- [x] GitHub-Remote anlegen
 - [ ] `ci.yml` für PRs und Pushes: Lint, PHPStan, PHPUnit (Postgres-Service), Angular-Lint/Test/Build,
-      Image-Build mit Cache, Trivy-Scan, Playwright-Smoke
+      Image-Build mit Cache, Trivy-Scan (Job vorhanden, abgeschaltet, siehe M9), Playwright-Smoke
 - [ ] Push der Images nach GHCR (`:sha`, `:main`)
-- [ ] Dependabot/Renovate
+- [x] Dependabot (monatlich, Minor/Patch gebündelt; PRs blockieren nichts)
 
 **Fertig, wenn:** Ein PR grün durchläuft und die Images in GHCR liegen.
 
@@ -139,6 +139,14 @@ Makefile                einheitliche Entry-Points
 - [ ] GitOps mit Argo CD
 - [ ] Observability: Request-ID, `/metrics`, OpenTelemetry
 - [ ] cosign-Signaturen, SBOM
+- [ ] Trivy-Scan in CI einschalten (Job `scan` in `ci.yml`, `if: false` entfernen). Stand der ersten Läufe
+      (Oktober 2026):
+  - Debian/Alpine-Pakete mit Fix (z. B. `pcre2`, `linux-libc-dev`): `apt-get upgrade` bzw. `apk upgrade`
+    im Dockerfile. Dabei darauf achten, dass der Build-Cache die Updates nicht einfriert
+    (Basis-Images per Digest pinnen und von Dependabot anheben lassen oder regelmäßig ohne Cache bauen).
+  - Go-Abhängigkeiten im `frankenphp`-Binary (`kin-openapi`, `grpc`, `x/crypto`): erst mit einem
+    FrankenPHP-Release nach v1.12.7 behebbar (upstream `main` ist schon angehoben). Bis dahin
+    begründete Ausnahmen in `.trivyignore.yaml` mit Ablaufdatum.
 
 ### Durchgehend – Dokumentation
 - [ ] `docs/` mit einer Seite je Umgebung (dev, homeserver, k8s, azure)

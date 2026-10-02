@@ -1,4 +1,5 @@
-# Was nicht in den Build-Kontext des Prod-Images gehört (Podman liest .containerignore).
+# Was nicht in den Build-Kontext des Prod-Images gehört. Podman und Docker BuildKit (CI)
+# lesen beide .dockerignore; .containerignore kennt nur Podman.
 # Kleinerer Kontext = schnellerer Build, und nichts Lokales landet versehentlich im Image.
 
 # Wird im Build neu erzeugt
@@ -24,4 +25,4 @@
 
 # Build-Dateien selbst
 /Dockerfile
-/.containerignore
+/.dockerignore

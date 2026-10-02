@@ -30,7 +30,7 @@ ENV COMPOSER_ALLOW_SUPERUSER=1
 COPY composer.json composer.lock symfony.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-progress
 
-# Jetzt den Code (was nicht hineingehört, filtert .containerignore)
+# Jetzt den Code (was nicht hineingehört, filtert .dockerignore)
 COPY . .
 
 # - dump-autoload: Classmap für alle Klassen, keine Dateisuche zur Laufzeit

@@ -1,0 +1,201 @@
+# CI: dieselben Checks wie `make test`, je Teilprojekt ein Job (laufen parallel).
+# Images, Scan und Smoke-Test gegen den Stack kommen in eigenen Jobs dazu.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Ein neuer Push auf denselben Branch/PR bricht den alten, noch laufenden Lauf ab
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimalrechte für das GITHUB_TOKEN; Jobs, die mehr brauchen, erweitern das selbst
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (cs, phpstan, phpunit)
+    runs-on: ubuntu-latest
+    # Wie im Devcontainer: Postgres 17 als Wegwerf-DB, die Tests nutzen app_test
+    services:
+      db:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      DATABASE_URL: postgresql://app:app@localhost:5432/app?serverVersion=17&charset=utf8
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_pgsql, intl, zip
+          coverage: none
+          tools: composer:v2
+      - name: Composer-Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ hashFiles('backend/composer.lock') }}
+          restore-keys: composer-
+      - run: composer install --no-interaction --no-progress
+      - run: composer check
+
+  frontend:
+    name: Frontend (prettier, eslint, vitest, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+
+  e2e-check:
+    name: Smoke-Tests statisch (prettier, tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+
+  images:
+    name: Image ${{ matrix.component }}
+    # Nur Code, der alle Checks besteht, wird als Image veröffentlicht
+    needs: [backend, frontend, e2e-check]
+    # PRs aus Forks bekommen kein Token mit Schreibrecht auf GHCR
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Tags und OCI-Labels: immer der volle Git-SHA (build once, deploy many),
+      # auf main zusätzlich :main. Das Label org.opencontainers.image.source
+      # verknüpft das Paket in GHCR mit diesem Repo.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cloudpoc-${{ matrix.component }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.component }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Layer-Cache im GitHub-Actions-Cache, je Image ein eigener Bereich
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,scope=${{ matrix.component }},mode=max
+
+  scan:
+    name: Trivy ${{ matrix.component }}
+    needs: images
+    # Vorerst abgeschaltet (PoC): Die Basis-Images haben Funde, siehe ROADMAP.md, M9
+    if: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      # Beide Images scannen, auch wenn eins rot wird: So sieht man alle Funde auf einmal
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+    steps:
+      # Auf Commit-SHA gepinnt statt auf ein Tag: Im März 2026 wurden Tags dieser Action
+      # bei einem Supply-Chain-Angriff auf Schadcode umgebogen. Ein SHA lässt sich nicht
+      # verschieben; Dependabot hält ihn aktuell und schreibt die Version in den Kommentar.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Genau das Image, das der images-Job eben gepusht hat
+          image-ref: ghcr.io/${{ github.repository_owner }}/cloudpoc-${{ matrix.component }}:${{ github.sha }}
+          format: table
+          # Rot nur bei HIGH/CRITICAL, für die es schon einen Fix gibt (sonst kann man nichts tun)
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          # Die Pakete in GHCR sind privat; Trivy meldet sich mit dem Job-Token an
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+  smoke:
+    name: Smoke-Test (Stack + Playwright)
+    # Läuft gegen genau die Images, die der images-Job eben gepusht hat
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    # Dieselben make-Targets wie auf dem Host, nur mit docker statt podman
+    env:
+      CONTAINER: docker
+      BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-backend:${{ github.sha }}
+      FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-frontend:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Wegwerf-Secrets nur für diesen Lauf; der Runner ist danach weg
+      - name: .env für den Stack
+        working-directory: deploy/compose
+        run: |
+          echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" > .env
+          echo "APP_SECRET=$(openssl rand -hex 32)" >> .env
+      # `up -d` kehrt erst zurück, wenn frontend und backend healthy sind
+      # (depends_on des Proxys), danach steht der Stack
+      - run: make stack-up
+      - run: make stack-smoke
+      - name: Logs des Stacks
+        if: failure()
+        run: make stack-ps && docker compose -f deploy/compose/compose.yaml logs --no-color
+      - name: Playwright-Bericht hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7
