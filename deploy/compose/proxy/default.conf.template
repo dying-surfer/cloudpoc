@@ -1,0 +1,50 @@
+# Reverse Proxy des Stacks: ein Origin für den Browser, deshalb kein CORS.
+#   /api/…, /healthz, /readyz  → backend   ·   alles andere → frontend
+# Die Health-Endpoints müssen explizit ans Backend: Sonst beantwortet sie der
+# SPA-Fallback des Frontends mit index.html und 200, auch wenn das Backend tot ist.
+#
+# Das ist ein Template: Beim Start ersetzt envsubst ${NGINX_LOCAL_RESOLVERS}.
+# nginx-Variablen wie $host bleiben stehen, weil es keine gleichnamigen Env-Vars gibt.
+
+log_format json escape=json '{"time":"$time_iso8601","remote_addr":"$remote_addr",'
+    '"method":"$request_method","uri":"$request_uri","status":$status,'
+    '"bytes":$body_bytes_sent,"duration":$request_time,'
+    '"upstream":"$upstream_addr","upstream_duration":"$upstream_response_time",'
+    '"user_agent":"$http_user_agent"}';
+
+server {
+    listen 8080;
+    listen [::]:8080;
+    server_name _;
+
+    access_log /dev/stdout json;
+    server_tokens off;
+
+    # Größere Bodies braucht die Ticket-API nicht
+    client_max_body_size 1m;
+
+    # Hostnamen bei jedem Request (max. 10 s gecacht) über den DNS des Compose-Netzes
+    # auflösen. Ohne das merkt sich nginx die IP beim Start, und nach einem Neustart
+    # des Backends (neue IP) liefert der Proxy 502, bis er selbst neu startet.
+    # Das wirkt nur, wenn proxy_pass eine Variable enthält.
+    resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
+    set $backend  http://backend:8080;
+    set $frontend http://frontend:8080;
+
+    # Infos für die App: ursprünglicher Host, Client-IP, Protokoll
+    proxy_set_header Host              $http_host;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    location /api/ {
+        proxy_pass $backend;
+    }
+
+    location ~ ^/(healthz|readyz)$ {
+        proxy_pass $backend;
+    }
+
+    location / {
+        proxy_pass $frontend;
+    }
+}

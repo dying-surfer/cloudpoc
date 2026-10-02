@@ -1,0 +1,11 @@
+# Was nicht in den Build-Kontext des Prod-Images gehört (Podman liest .containerignore).
+# node_modules entsteht im Build per `npm ci` neu, passend zum Linux im Image.
+
+/node_modules/
+/dist/
+/.angular/
+/coverage/
+
+# Build-Dateien selbst
+/Dockerfile
+/.containerignore

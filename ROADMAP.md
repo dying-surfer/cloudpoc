@@ -81,13 +81,13 @@ Makefile                einheitliche Entry-Points
 **Fertig, wenn:** CRUD und Filter im Browser gegen das lokale Backend funktionieren.
 
 ### M4 – Prod-Images & lokaler Compose-Stack
-- [ ] Backend-Dockerfile (FrankenPHP, Multi-Stage, `--no-dev`, Opcache, non-root)
+- [x] Backend-Dockerfile (FrankenPHP, Multi-Stage, `--no-dev`, Opcache, non-root)
       (`.containerignore`: `backend/fixtures/`, `backend/tests/` gehören nicht ins Image)
-- [ ] Frontend-Dockerfile (Node-Build → nginx-unprivileged, SPA-Fallback)
-- [ ] `deploy/compose/compose.yaml` mit Reverse Proxy, frontend, backend, migrate (one-shot) und
+- [x] Frontend-Dockerfile (Node-Build → nginx-unprivileged, SPA-Fallback)
+- [x] `deploy/compose/compose.yaml` mit Reverse Proxy, frontend, backend, migrate (one-shot) und
       postgres (benanntes Volume)
-- [ ] DB-Skripte: `make db-reset`, `db-dump`, `db-import FILE=…`, `db/anonymize.sql`
-- [ ] Playwright-Smoke-Test gegen den Stack
+- [x] DB-Skripte: `make db-reset`, `db-dump`, `db-import FILE=…`, `db/anonymize.sql`
+- [x] Playwright-Smoke-Test gegen den Stack (`e2e/`, `make stack-smoke`)
 
 **Fertig, wenn:** `podman compose up` die App bereitstellt und die Daten ein `down`/`up` überleben.
 

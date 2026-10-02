@@ -8,7 +8,8 @@ Entwickelt wird in einem Devcontainer mit zwei Services:
 | `db`        | PostgreSQL 17 als **Wegwerf-DB**: Daten liegen im RAM (tmpfs)       |
 
 Die DB ist nach jedem Neustart des Containers leer. Echte Daten gehören nicht hierher,
-höchstens anonymisierte Dumps (ab M4: `make db-import`).
+höchstens anonymisierte Dumps: `make dev-db-import FILE=db/dumps/cloudpoc-anon-….dump`
+(erzeugt mit `make db-dump-anon` aus dem Stack).
 
 ## Voraussetzungen (Podman statt Docker)
 
@@ -55,9 +56,12 @@ maschinenspezifische Einstellungen sind:
 ```json
 {
   "dev.containers.dockerPath": "podman",
-  "dev.containers.dockerComposePath": "docker-compose"
+  "dev.containers.dockerComposePath": "/home/linuxbrew/.linuxbrew/bin/docker-compose"
 }
 ```
+
+`docker-compose` mit vollem Pfad: Aus dem Dock gestartet erbt VS Code den PATH von systemd, und darin
+fehlt Homebrew (das trägt nur `/etc/profile.d/brew.sh` in Login-Shells ein), siehe *Fehlersuche*.
 
 ## Starten
 
@@ -153,6 +157,24 @@ npm test              # Vitest im Watch-Modus, während man entwickelt
 - Testdaten erzeugen die Tests selbst mit `TicketFactory`, statt auf die Fixtures zu bauen.
   So steht im Test, wovon er abhängt.
 
+### Smoke-Tests gegen den Stack (Playwright)
+
+`e2e/` enthält wenige Playwright-Tests, die nur das Zusammenspiel prüfen: Proxy-Routing,
+Health-Endpoints, Banner aus `config.json`, ein Ticket anlegen, finden und löschen.
+
+```bash
+make stack-up && make stack-smoke   # auf dem Host; Bericht danach in e2e/playwright-report/
+make e2e-check                      # überall: Prettier, TypeScript, Testliste (Teil von make test)
+```
+
+- `stack-smoke` startet das offizielle Image `mcr.microsoft.com/playwright` im Compose-Netz
+  (`cloudpoc_default`) mit `BASE_URL=http://proxy:8080`. Browser und Systembibliotheken bringt das
+  Image mit; im Devcontainer fehlen sie (Chromium startet dort nicht, `libglib-2.0.so.0` fehlt).
+- Die Image-Version kommt aus `e2e/package.json`. `@playwright/test` ist dort exakt gepinnt, weil
+  Bibliothek und Browser im Image zusammenpassen müssen.
+- Der Test schreibt in die persistente Stack-DB. Er legt ein Ticket mit eindeutigem Titel an und
+  räumt es auch dann wieder ab, wenn er scheitert.
+
 ## Claude Code im Devcontainer
 
 Claude Code ist über das Feature `ghcr.io/anthropics/devcontainer-features/claude-code` im Image
@@ -191,3 +213,8 @@ installiert. Im VS-Code-Terminal des Containers `claude` starten und beim ersten
 | API: `relation "ticket" does not exist` (500)   | Die Wegwerf-DB ist nach einem Neustart des `db`-Containers leer. Schema und Demo-Daten neu einspielen: `doctrine:migrations:migrate -n` und `doctrine:fixtures:load -n` (siehe *Backend starten*) |
 | `npm run check`: Prettier meckert über `angular.json` | Die Angular CLI schreibt die Datei in ihrem eigenen Format (z. B. nach der Analytics-Frage). `npm run format` behebt es |
 | Vitest: „Test timed out“ in Komponententests mit `HttpTestingController` | `fixture.whenStable()` wartet auch auf offene HTTP-Requests (eine `resource` zählt als laufende Aufgabe). Vor `expectOne()` deshalb nur `TestBed.tick()` aufrufen, `whenStable()` erst nach `flush()` |
+| Prod-Build mit `php -S` getestet: `/readyz` meldet die DB als „unavailable“, obwohl `DATABASE_URL` gesetzt ist | `composer dump-env prod` schreibt die `.env`-Werte (mit `!ChangeMe!`) nach `.env.local.php`. Echte Env-Vars haben nur Vorrang, wenn PHP sie in `$_SERVER`/`$_ENV` ablegt. `php -S` tut das mit `variables_order=GPCS` nicht, FrankenPHP im Prod-Image schon. Für `php -S`: `-d variables_order=EGPCS` |
+| `curl localhost:<port>` auf einen Container: „Recv failure: Verbindung zurückgesetzt“, mit `127.0.0.1` geht es | `localhost` wird zu `::1` (IPv6) aufgelöst, und rootless Podman (pasta) reicht IPv6 als IPv6 in den Container weiter. Der Dienst darin lauscht nur auf IPv4. Bei nginx zusätzlich `listen [::]:8080;` (siehe `frontend/docker/nginx.conf`) |
+| `podman compose …`: „failed to connect to the docker API at unix:///run/user/1000/podman/podman.sock … no such file or directory“ | Die Socket-Datei fehlt, obwohl `podman.socket` aktiviert ist (Ursache unklar, trat in M4 einmal auf). `systemctl --user restart podman.socket` legt sie neu an. Zum Nachsehen: `systemctl --user status podman.socket`, `journalctl --user -u podman.socket -n 20` |
+| VS Code: „spawn docker-compose ENOENT“ beim Öffnen des Devcontainers; `podman compose`: „looking up compose provider failed“ | Homebrew fehlt im PATH. VS Code aus dem Dock bekommt den PATH von systemd (`systemctl --user show-environment`), ohne `/home/linuxbrew/.linuxbrew/bin`. Fiel erst nach `make dev-down` auf: Existiert der Container schon, startet VS Code ihn per `podman`, nur zum Neuanlegen braucht es Compose. Lösung: `dockerComposePath` mit vollem Pfad (siehe *VS-Code-Einstellungen*). Die `make`-Targets deshalb im normalen Terminal ausführen (ein `make stack-down` scheiterte in M4 vermutlich im Terminal eines aus dem Dock gestarteten VS Code) |
+| Stack: Proxy startet nicht, „port 8000 already in use“ | 8000 ist der Port des Dev-Backends, VS Code leitet ihn aus dem Devcontainer an den Host weiter. Der Stack nutzt deshalb 8088 (`HTTP_PORT` in `deploy/compose/.env`). Wer den Port belegt: `ss -ltnp \| grep :8000` |

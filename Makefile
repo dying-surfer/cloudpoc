@@ -69,6 +69,135 @@ frontend-install: ## npm-Abhängigkeiten des Frontends installieren (exakt nach 
 frontend-check: ## Frontend: Prettier, ESLint, Vitest, Produktions-Build
 	@$(FRONTEND) npm run check
 
+# --- Prod-Images (nur auf dem Host, braucht podman) ---------------------------
+# Lokal heißt der Tag "local"; in CI später der Git-SHA (make backend-image TAG=…).
+
+TAG ?= local
+
+.PHONY: backend-image frontend-image
+
+backend-image: ## Prod-Image des Backends bauen (Tag per TAG=…, Standard: local)
+	podman build -t cloudpoc-backend:$(TAG) backend
+
+frontend-image: ## Prod-Image des Frontends bauen (Tag per TAG=…, Standard: local)
+	podman build -t cloudpoc-frontend:$(TAG) frontend
+
+# --- Prod-naher Stack (nur auf dem Host) -----------------------------------------
+# Nutzt die lokal gebauten Images; Secrets kommen aus deploy/compose/.env.
+
+STACK = podman compose -f deploy/compose/compose.yaml
+
+.PHONY: images stack-up stack-ps stack-logs stack-down stack-destroy
+
+images: backend-image frontend-image ## Beide Prod-Images bauen
+
+stack-up: ## Stack starten (http://localhost:8088); vorher make images
+	$(STACK) up -d
+
+stack-ps: ## Status der Services im Stack
+	$(STACK) ps -a
+
+stack-logs: ## Logs aller Services verfolgen (Strg+C beendet)
+	$(STACK) logs -f
+
+stack-down: ## Stack stoppen und entfernen, die Daten (Volume) bleiben
+	$(STACK) down
+
+stack-destroy: ## Stack samt DB-Volume entfernen (alle Daten weg!)
+	$(STACK) down -v
+
+# --- Smoke-Tests (Playwright, Ordner e2e/) ---------------------------------------
+# stack-smoke läuft im offiziellen Playwright-Image: Browser und Systembibliotheken
+# sind dort drin und passen exakt zur Version. Der Container hängt im Compose-Netz
+# und spricht den Proxy direkt an. Die Version kommt aus e2e/package.json.
+# e2e-check prüft nur statisch (Prettier, TypeScript, Testliste), geht also überall.
+
+PLAYWRIGHT_VERSION := $(shell sed -n 's/.*"@playwright\/test": "\(.*\)".*/\1/p' e2e/package.json)
+PLAYWRIGHT_IMAGE   = mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
+
+ifneq ($(shell command -v podman 2>/dev/null),)
+E2E = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/e2e workspace
+else
+E2E = cd e2e &&
+endif
+
+.PHONY: stack-smoke e2e-install e2e-check
+
+stack-smoke: ## Playwright-Smoke-Tests gegen den laufenden Stack (Bericht: e2e/playwright-report/)
+	podman run --rm --init --ipc=host --network cloudpoc_default \
+		-v $(CURDIR)/e2e:/e2e:z -w /e2e -e BASE_URL=http://proxy:8080 -e CI=1 \
+		$(PLAYWRIGHT_IMAGE) sh -c 'npm ci --no-audit --no-fund && npx playwright test'
+
+e2e-install: ## npm-Abhängigkeiten der Smoke-Tests installieren
+	@$(E2E) npm ci
+
+e2e-check: ## Smoke-Tests statisch prüfen: Prettier, TypeScript, Testliste
+	@$(E2E) npm run check
+
+# --- Datenbank des Stacks (nur auf dem Host) -------------------------------------
+# Die Befehle laufen per exec im db-Container: Dort passen pg_dump/pg_restore immer
+# zur Server-Version, und die DB braucht keinen veröffentlichten Port.
+# Dumps landen in db/dumps/ (nicht im Repo, können echte Daten enthalten).
+# Gefährliche Targets fragen nach; YES=1 überspringt die Frage (z. B. in Skripten).
+
+DB_EXEC   = $(STACK) exec -T db
+DUMP_DIR  = db/dumps
+STAMP     := $(shell date +%Y%m%d-%H%M%S)
+DUMP_FILE := $(DUMP_DIR)/cloudpoc-$(STAMP).dump
+ANON_FILE := $(DUMP_DIR)/cloudpoc-anon-$(STAMP).dump
+
+# $(call confirm,Text): fragt nach und bricht ab, wenn nicht mit "j" geantwortet wird
+define confirm
+	@if [ "$(YES)" != 1 ]; then printf '%s Weiter? [j/N] ' "$(1)"; read a; [ "$$a" = j ]; fi
+endef
+
+.PHONY: db-reset db-dump db-dump-anon db-import dev-db-import
+
+db-reset: ## Stack-DB leeren und neu migrieren (alle Daten weg!)
+	$(call confirm,Alle Daten in der Stack-DB werden gelöscht.)
+	$(DB_EXEC) psql -U app -d app -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+	$(STACK) run --rm migrate
+
+db-dump: ## Dump der Stack-DB nach db/dumps/ schreiben
+	@mkdir -p $(DUMP_DIR)
+	@# Erst in eine .tmp-Datei: Bricht pg_dump ab, bleibt kein halber Dump mit gültigem Namen liegen
+	$(DB_EXEC) pg_dump -U app -d app --format=custom > $(DUMP_FILE).tmp
+	@mv $(DUMP_FILE).tmp $(DUMP_FILE) && ls -lh $(DUMP_FILE)
+
+db-import: ## Dump in die Stack-DB einspielen, ersetzt die Daten (FILE=db/dumps/….dump)
+	@test -n "$(FILE)" || { echo "FILE fehlt, z. B.: make db-import FILE=db/dumps/cloudpoc-….dump"; exit 1; }
+	$(call confirm,Die Daten in der Stack-DB werden durch $(FILE) ersetzt.)
+	$(DB_EXEC) pg_restore -U app -d app --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error < $(FILE)
+	@# Der Dump kann älter sein als der Code: fehlende Migrationen nachziehen
+	$(STACK) run --rm migrate
+
+db-dump-anon: ## Anonymisierten Dump der Stack-DB schreiben (für Dev/Staging)
+	@mkdir -p $(DUMP_DIR)
+	@# Kopie als anon_tmp anlegen; nur die Kopie wird anonymisiert. Die echten Daten
+	@# verlassen den db-Container nie, nur der anonymisierte Dump.
+	$(DB_EXEC) sh -c 'dropdb -U app --if-exists anon_tmp && createdb -U app anon_tmp \
+		&& pg_dump -U app -d app --format=custom | pg_restore -U app -d anon_tmp --no-owner --no-acl --exit-on-error'
+	$(DB_EXEC) psql -U app -d anon_tmp -q < db/anonymize.sql
+	$(DB_EXEC) pg_dump -U app -d anon_tmp --format=custom > $(ANON_FILE).tmp
+	$(DB_EXEC) dropdb -U app anon_tmp
+	@mv $(ANON_FILE).tmp $(ANON_FILE) && ls -lh $(ANON_FILE)
+
+# --- Datenbank im Devcontainer -----------------------------------------------------
+# Auf dem Host per exec im workspace, im Devcontainer direkt (psql & Co. nutzen PGHOST usw.).
+
+ifneq ($(shell command -v podman 2>/dev/null),)
+WORKSPACE = $(DEV_COMPOSE) exec -T -w /workspaces/cloudpoc workspace
+else
+WORKSPACE =
+endif
+
+dev-db-import: ## Anonymisierten Dump in die Dev-DB einspielen (FILE=db/dumps/cloudpoc-anon-….dump)
+	@test -n "$(FILE)" || { echo "FILE fehlt, z. B.: make dev-db-import FILE=db/dumps/cloudpoc-anon-….dump"; exit 1; }
+	@# Keine echten Daten in Dev: nur Dumps aus db-dump-anon (erkennbar am Namen)
+	@case "$(notdir $(FILE))" in *-anon-*) ;; *) echo "$(FILE) ist kein anonymisierter Dump (*-anon-*). Erst make db-dump-anon."; exit 1;; esac
+	$(WORKSPACE) pg_restore -d app --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error $(FILE)
+	$(BACKEND) php bin/console doctrine:migrations:migrate -n
+
 # --- Alles ---------------------------------------------------------------------
 
-test: backend-check frontend-check ## Alle Checks und Tests (Backend und Frontend)
+test: backend-check frontend-check e2e-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch)

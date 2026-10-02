@@ -1,0 +1,27 @@
+# Was nicht in den Build-Kontext des Prod-Images gehört (Podman liest .containerignore).
+# Kleinerer Kontext = schnellerer Build, und nichts Lokales landet versehentlich im Image.
+
+# Wird im Build neu erzeugt
+/vendor/
+/var/
+/public/bundles/
+
+# Nur für Entwicklung und Tests (autoload-dev, fehlt mit --no-dev ohnehin)
+/tests/
+/fixtures/
+/.env.dev
+/.env.test
+/phpunit.dist.xml
+/.phpunit.cache/
+/phpstan.dist.neon
+/.php-cs-fixer.dist.php
+/.php-cs-fixer.cache
+
+# Lokale Overrides, können Secrets enthalten
+/.env.local
+/.env.local.php
+/.env.*.local
+
+# Build-Dateien selbst
+/Dockerfile
+/.containerignore
