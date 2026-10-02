@@ -121,6 +121,12 @@ wird ausgetauscht. Fehlt sie, startet die App absichtlich nicht.
 Google-CDN. Hell/Dunkel folgt standardmäßig dem System; die Wahl im Menü oben rechts landet im
 `localStorage`. Warum nicht PrimeNG: `docs/adr/0001-angular-material-statt-primeng.md`.
 
+**Ticketliste (`/tickets`):** Filter, Sortierung und Seite stehen nur in der URL (Query-Params).
+Der Router schreibt sie in Signal-Inputs der Komponente (`withComponentInputBinding`), daraus
+lädt eine `rxResource` die Seite. Bedienelemente ändern nur die URL; so lassen sich Ansichten
+verlinken, und Zurück/Vor im Browser funktioniert. Ungültige Werte in der URL werden ignoriert.
+API-Fehler zeigt ein Interceptor als Snackbar (`core/problem-details.ts`).
+
 ## Tests und Checks
 
 ```bash
@@ -175,3 +181,6 @@ installiert. Im VS-Code-Terminal des Containers `claude` starten und beim ersten
 | `devcontainer exec psql -c …`: „Unknown argument: c“ | Die CLI wertet Optionen mit `-` auch für den Befehl im Container aus. Stattdessen `podman compose -f .devcontainer/compose.yaml exec workspace …` nutzen (so machen es auch die `make`-Targets) |
 | `perl: warning: Setting locale failed`          | Die Host-Locale fehlt im Image. Erzeugt werden `de_DE.UTF-8` und `en_US.UTF-8` (Dockerfile); weitere bei Bedarf dort in `locale.gen` ergänzen |
 | npm: „packages have install scripts not yet covered by allowScripts“ | npm 11 führt Install-Skripte nur noch nach Freigabe aus. Entschieden wird pro Paket in `allowScripts` (`frontend/package.json`); die Build-Tools dort laufen mit ihren mitgelieferten Binaries, ihre Skripte sind abgelehnt. Bei einem neuen Paket: `npm install-scripts ls`, dann `approve` oder `deny` |
+| API: `relation "ticket" does not exist` (500)   | Die Wegwerf-DB ist nach einem Neustart des `db`-Containers leer. Schema und Demo-Daten neu einspielen: `doctrine:migrations:migrate -n` und `doctrine:fixtures:load -n` (siehe *Backend starten*) |
+| `npm run check`: Prettier meckert über `angular.json` | Die Angular CLI schreibt die Datei in ihrem eigenen Format (z. B. nach der Analytics-Frage). `npm run format` behebt es |
+| Vitest: „Test timed out“ in Komponententests mit `HttpTestingController` | `fixture.whenStable()` wartet auch auf offene HTTP-Requests (eine `resource` zählt als laufende Aufgabe). Vor `expectOne()` deshalb nur `TestBed.tick()` aufrufen, `whenStable()` erst nach `flush()` |

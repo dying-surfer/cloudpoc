@@ -70,12 +70,12 @@ Makefile                einheitliche Entry-Points
 **Fertig, wenn:** `make test` grün ist und `curl /api/tickets?status=open` sinnvolle Daten liefert.
 
 ### M3 – Frontend: Liste, Filter, Detail
-- [ ] Angular-App mit Material (ohne Tailwind), Hell/Dunkel-Umschalter (Standard: Systemeinstellung)
-- [ ] `/tickets` als Tabelle mit Paginator, Sortierung und Filterleiste
+- [x] Angular-App mit Material (ohne Tailwind), Hell/Dunkel-Umschalter (Standard: Systemeinstellung)
+- [x] `/tickets` als Tabelle mit Paginator, Sortierung und Filterleiste
       (Filter in den Query-Params, serverseitig ausgewertet)
 - [ ] `/tickets/new` und `/tickets/:id` als Signal Form mit Speichern, Löschen (mit Bestätigung) und Schließen
-- [ ] `TicketApiService`, Interceptor für Problem Details (Snackbar)
-- [ ] Runtime-Config über `/config.json` (z. B. Umgebungs-Banner)
+- [x] `TicketApiService`, Interceptor für Problem Details (Snackbar)
+- [x] Runtime-Config über `/config.json` (z. B. Umgebungs-Banner)
 - [ ] `proxy.conf.json` für `ng serve`, Unit-Tests
 
 **Fertig, wenn:** CRUD und Filter im Browser gegen das lokale Backend funktionieren.

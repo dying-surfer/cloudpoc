@@ -77,3 +77,16 @@ export interface TicketQuery {
   page?: number | null;
   pageSize?: number | null;
 }
+
+/** Anzeigetexte; die API selbst spricht nur die englischen Werte. */
+export const STATUS_LABELS: Record<TicketStatus, string> = {
+  open: 'Offen',
+  in_progress: 'In Arbeit',
+  done: 'Erledigt',
+};
+
+export const PRIORITY_LABELS: Record<TicketPriority, string> = {
+  low: 'Niedrig',
+  medium: 'Mittel',
+  high: 'Hoch',
+};

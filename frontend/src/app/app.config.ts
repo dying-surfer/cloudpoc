@@ -1,7 +1,10 @@
+import { registerLocaleData } from '@angular/common';
+import localeDe from '@angular/common/locales/de';
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
   inject,
+  LOCALE_ID,
   provideAppInitializer,
   provideBrowserGlobalErrorListeners,
 } from '@angular/core';
@@ -11,6 +14,9 @@ import { routes } from './app.routes';
 import { ConfigService } from './core/config.service';
 import { problemDetailsInterceptor } from './core/problem-details';
 
+// Datums- und Zahlenformate (DatePipe usw.) auf Deutsch.
+registerLocaleData(localeDe);
+
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
@@ -18,6 +24,7 @@ export const appConfig: ApplicationConfig = {
     provideHttpClient(withFetch(), withInterceptors([problemDetailsInterceptor])),
     // Die App startet erst, wenn /config.json geladen ist.
     provideAppInitializer(() => inject(ConfigService).load()),
+    { provide: LOCALE_ID, useValue: 'de-DE' },
     // mat-icon nutzt standardmäßig die alte Schrift "Material Icons"; wir haben die
     // Nachfolgerin "Material Symbols" selbst gehostet (siehe angular.json).
     {
