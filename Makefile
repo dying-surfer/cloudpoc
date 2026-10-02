@@ -224,6 +224,21 @@ endif
 helm-check: ## Helm-Chart prüfen: helm lint, kubeconform (alle Werte-Varianten)
 	@$(HELM_CHECK)
 
+# --- Kubernetes-Secrets (deploy/secrets/, mit sops verschlüsselt) ----------------
+# Ein Unterordner pro Namespace. Anwenden nur auf dem Host: braucht sops mit dem
+# privaten age-Schlüssel und kubectl mit KUBECONFIG (docs/k8s.md).
+
+.PHONY: secrets-check k8s-secrets
+
+secrets-check: ## Prüfen, dass alle Secrets unter deploy/secrets/ verschlüsselt sind
+	@deploy/check-secrets.sh
+
+k8s-secrets: ## Secrets eines Namespace entschlüsseln und anwenden (Host, NS=staging)
+	@test -n "$(NS)" || { echo "NS fehlt, z. B. make k8s-secrets NS=staging" >&2; exit 1; }
+	@for f in deploy/secrets/$(NS)/*.sops.yaml; do \
+		sops -d "$$f" | kubectl apply -f - || exit 1; \
+	done
+
 # --- Alles ---------------------------------------------------------------------
 
-test: backend-check frontend-check e2e-check helm-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch, Helm-Chart)
+test: backend-check frontend-check e2e-check helm-check secrets-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch, Helm-Chart, Secrets)
