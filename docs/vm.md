@@ -1,8 +1,9 @@
 # VM: Deployment via Compose
 
 Eine Debian-VM auf dem Host, darauf **eine** Instanz des Stacks aus `deploy/compose/`.
-Ausgerollt wird automatisch: Nach grüner CI auf `main` holt ein **Self-hosted Runner** in der VM
-die gerade gebauten Images (SHA-Tag) aus GHCR und startet den Stack damit neu.
+Ausgerollt wird auf Knopfdruck: Der Workflow *Deploy* auf GitHub startet einen Job auf dem
+**Self-hosted Runner** in der VM. Der holt die Images der gewählten Version (SHA-Tag) aus GHCR und
+startet den Stack damit neu.
 
 ```
 GitHub ── Job "deploy" ──▶ Runner in der VM (baut die Verbindung selbst auf, von innen nach außen)
@@ -152,7 +153,7 @@ Stolpersteine:
 Jeder kann einen PR öffnen und darin Workflows ändern. Damit kein fremder Code auf der VM läuft:
 
 - Nur der Deploy-Workflow nutzt `runs-on: [self-hosted, vm]`, und er startet **nie** bei
-  `pull_request`, nur nach CI auf `main`. Ändert ein PR einen Workflow so, dass er den Runner
+  `pull_request`, nur manuell (`workflow_dispatch`, dürfen nur User mit Schreibrecht). Ändert ein PR einen Workflow so, dass er den Runner
   nutzen würde, läuft der Lauf erst nach deiner Freigabe (nächster Punkt).
 - *Settings → Actions → General → Approval for running fork pull request workflows from
   contributors*: **Require approval for all external contributors**.
@@ -160,16 +161,21 @@ Jeder kann einen PR öffnen und darin Workflows ändern. Damit kein fremder Code
 
 ## 6. Deploy
 
-`.github/workflows/deploy.yml` startet nach jedem **grünen CI-Lauf auf `main`**, der durch einen Push
-entstanden ist (auch ein PR-Merge ist ein Push). PR-Läufe deployen nie. Der Job läuft auf dem Runner
-mit Label `vm`, checkt genau den geprüften Commit aus und ruft `make deploy` mit den SHA-Images auf:
+`.github/workflows/deploy.yml` startet nur von Hand: *Actions → Deploy → Run workflow*. Als Version
+geht ein voller Commit-SHA, ein Branch oder ein Tag (Standard: `main`). Der Workflow löst sie auf
+den Commit-SHA auf, prüft, ob es Images mit diesem Tag in GHCR gibt, und ruft dann `make deploy` auf:
 `docker compose pull` und `up -d`. Dabei läuft `migrate` einmal, dann starten `backend`, `frontend`
 und `proxy` neu. Das DB-Volume bleibt.
 
-Wichtig: `workflow_run` wirkt nur aus der Workflow-Datei auf `main`. Der erste Deploy passiert also
-erst nach dem Merge, vorher kann der Workflow nicht auslösen.
+Images gibt es für jeden Commit, den die CI per Push auf `main` gebaut hat. Ein Branch-Stand ohne
+solchen CI-Lauf (z. B. ein Feature-Branch) bricht mit „fehlt in GHCR“ ab. Den Button *Run workflow*
+zeigt GitHub erst, wenn die Workflow-Datei auf `main` liegt.
 
-Auf GitHub unter *Actions → Deploy* zu sehen. In der VM als `admin` prüfen:
+**Ältere Version (Rollback):** Einfach deren SHA eingeben. Migrationen werden dabei **nicht**
+zurückgedreht: Hat eine neuere Version das Schema geändert, läuft der alte Code gegen das neue
+Schema. Ohne neue Migrationen dazwischen ist das unkritisch.
+
+Die Zusammenfassung des Laufs zeigt, welcher Commit ausgerollt wurde. In der VM als `admin` prüfen:
 
 ```bash
 sudo docker ps -a --filter label=com.docker.compose.project=cloudpoc
@@ -226,3 +232,65 @@ sudo systemctl status 'actions.runner.*'      # der Runner ist auch wieder da
 
 Dass die Container nach dem Reboot überhaupt starten, liegt am Dienst `docker.service`, den das
 Debian-Paket automatisch aktiviert (`systemctl is-enabled docker` → `enabled`).
+
+## 8. Logs
+
+### Einmalig: Container-Logs ins Journal
+
+Standardmäßig schreibt Docker die Logs als JSON-Datei neben den Container. Das hat zwei Haken:
+Die Datei wird nie rotiert, und sie verschwindet mit dem Container. Jeder Deploy erzeugt `backend`,
+`frontend` und `migrate` neu, danach ist zum Beispiel ein Absturz von gestern nicht mehr nachzulesen.
+
+Mit dem Log-Treiber `journald` landen die Logs im systemd-Journal: Es rotiert selbst (Standard:
+höchstens 10 % des Dateisystems, maximal 4 GB) und behält die Logs über Deploys hinweg, weil der
+Container-Name (`cloudpoc-backend-1`) gleich bleibt. `docker logs` funktioniert weiter.
+
+```bash
+# Journal über Reboots behalten (unter Debian normalerweise schon so)
+ls -d /var/log/journal || { sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald; }
+
+# Log-Treiber für alle neuen Container; tag = Container-Name statt ID in den Logzeilen
+echo '{ "log-driver": "journald", "log-opts": { "tag": "{{.Name}}" } }' \
+  | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+
+Achtung: Der Treiber gilt nur für **neu erzeugte** Container, `db` und `proxy` behalten sonst den
+alten. Also den Stack einmal entfernen (das DB-Volume bleibt) und auf GitHub einen Deploy
+starten (*Actions → Deploy → Run workflow*):
+
+```bash
+sudo docker compose -p cloudpoc down
+# … Deploy auf GitHub neu starten, dann:
+sudo docker inspect -f '{{.Name}} {{.HostConfig.LogConfig.Type}}' $(sudo docker ps -aq)   # überall journald
+```
+
+### Container-Logs ansehen
+
+Live und kurzfristig über Compose. `-p cloudpoc` ist der Projektname aus `name: cloudpoc`, damit
+findet Compose die Container ohne `compose.yaml` und `.env`:
+
+```bash
+sudo docker compose -p cloudpoc logs -f                 # alle Services, live (Strg+C beendet)
+sudo docker compose -p cloudpoc logs -f backend proxy   # nur bestimmte
+sudo docker compose -p cloudpoc logs --since 10m db     # die letzten 10 Minuten
+sudo docker compose -p cloudpoc logs migrate            # was der letzte Deploy migriert hat
+```
+
+Rückblickend, auch über Deploys und Reboots hinweg, über das Journal:
+
+```bash
+sudo journalctl -t cloudpoc-backend-1 --since yesterday        # ein Container
+sudo journalctl -t cloudpoc-migrate-1                          # alle Migrationsläufe aller Deploys
+sudo journalctl -t cloudpoc-proxy-1 -t cloudpoc-backend-1 -f   # mehrere, live
+sudo journalctl -t cloudpoc-backend-1 -b -1                    # nur aus dem vorigen Boot
+```
+
+### Deploy und Runner
+
+- **Deploy-Lauf:** auf GitHub unter *Actions → Deploy → Lauf → Job*, mit der Ausgabe jedes Schritts
+  (`make deploy`, Readiness-Check, `make stack-ps`).
+- **Runner-Dienst** (Verbindung zu GitHub, angenommene Jobs):
+  `sudo journalctl -u 'actions.runner.*' -f`. Ausführlicher: `/home/runner/actions-runner/_diag/`.
+- **Docker-Daemon**, z. B. wenn nach einem Reboot ein Container nicht hochkommt:
+  `sudo journalctl -u docker`.
