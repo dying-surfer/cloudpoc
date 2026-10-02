@@ -1,0 +1,159 @@
+<header>
+  <h1>Tickets</h1>
+  <a matButton="filled" routerLink="new">
+    <mat-icon>add</mat-icon>
+    Neues Ticket
+  </a>
+</header>
+
+<form class="filters" role="search" (submit)="$event.preventDefault()">
+  <mat-form-field class="search">
+    <mat-label>Suche</mat-label>
+    <mat-icon matPrefix>search</mat-icon>
+    <input
+      matInput
+      type="search"
+      [value]="qText()"
+      (input)="onText('q', $any($event.target).value)"
+      placeholder="Titel oder Beschreibung"
+    />
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Status</mat-label>
+    <mat-select [value]="query().status" (valueChange)="onFilter('status', $event)">
+      <mat-option [value]="null">Alle</mat-option>
+      @for (status of statuses; track status) {
+        <mat-option [value]="status">{{ statusLabels[status] }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Priorität</mat-label>
+    <mat-select [value]="query().priority" (valueChange)="onFilter('priority', $event)">
+      <mat-option [value]="null">Alle</mat-option>
+      @for (priority of priorities; track priority) {
+        <mat-option [value]="priority">{{ priorityLabels[priority] }}</mat-option>
+      }
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Zuständig</mat-label>
+    <input
+      matInput
+      [value]="assigneeText()"
+      (input)="onText('assignee', $any($event.target).value)"
+    />
+  </mat-form-field>
+
+  <mat-form-field>
+    <mat-label>Fällig vor</mat-label>
+    <input
+      matInput
+      type="date"
+      [value]="query().dueBefore ?? ''"
+      (change)="onFilter('dueBefore', $any($event.target).value)"
+    />
+  </mat-form-field>
+
+  @if (hasFilters()) {
+    <button matButton type="button" (click)="resetFilters()">
+      <mat-icon>filter_alt_off</mat-icon>
+      Filter zurücksetzen
+    </button>
+  }
+</form>
+
+<div class="table-container mat-elevation-z1">
+  <mat-progress-bar
+    mode="indeterminate"
+    [class.hidden]="!tickets.isLoading()"
+    aria-label="Tickets werden geladen"
+  />
+
+  <div class="table-scroll">
+    <table
+      mat-table
+      [dataSource]="lastPage()?.items ?? []"
+      matSort
+      [matSortActive]="sortActive()"
+      [matSortDirection]="sortDirection()"
+      (matSortChange)="onSort($event)"
+    >
+      <ng-container matColumnDef="title">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Titel</th>
+        <td mat-cell *matCellDef="let ticket">
+          <!-- Der Link macht die Zeile per Tastatur erreichbar; der Klick auf die Zeile ist Komfort. -->
+          <a [routerLink]="ticket.id" (click)="$event.stopPropagation()">{{ ticket.title }}</a>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Status</th>
+        <td mat-cell *matCellDef="let ticket">
+          <span class="badge" [attr.data-status]="ticket.status">
+            {{ statusLabel(ticket.status) }}
+          </span>
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="priority">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Priorität</th>
+        <td mat-cell *matCellDef="let ticket" [attr.data-priority]="ticket.priority">
+          {{ priorityLabel(ticket.priority) }}
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="assignee">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Zuständig</th>
+        <td mat-cell *matCellDef="let ticket">{{ ticket.assignee ?? '–' }}</td>
+      </ng-container>
+
+      <ng-container matColumnDef="dueDate">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Fällig</th>
+        <td mat-cell *matCellDef="let ticket">
+          {{ ticket.dueDate ? (ticket.dueDate | date: 'dd.MM.yyyy') : '–' }}
+        </td>
+      </ng-container>
+
+      <ng-container matColumnDef="createdAt">
+        <th mat-header-cell *matHeaderCellDef mat-sort-header>Erstellt</th>
+        <td mat-cell *matCellDef="let ticket">{{ ticket.createdAt | date: 'dd.MM.yyyy HH:mm' }}</td>
+      </ng-container>
+
+      <tr mat-header-row *matHeaderRowDef="columns; sticky: true"></tr>
+      <tr
+        mat-row
+        *matRowDef="let row; columns: columns"
+        class="clickable"
+        (click)="openTicket(row.id)"
+      ></tr>
+
+      <tr class="mat-mdc-row" *matNoDataRow>
+        <td class="mat-mdc-cell empty" [attr.colspan]="columns.length">
+          @if (tickets.error()) {
+            Tickets konnten nicht geladen werden.
+            <button matButton type="button" (click)="tickets.reload()">Erneut versuchen</button>
+          } @else if (tickets.isLoading()) {
+            Lädt …
+          } @else if (hasFilters()) {
+            Keine Tickets für diese Filter.
+          } @else {
+            Noch keine Tickets vorhanden.
+          }
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <mat-paginator
+    [length]="lastPage()?.total ?? 0"
+    [pageIndex]="query().page - 1"
+    [pageSize]="query().pageSize"
+    [pageSizeOptions]="pageSizes"
+    showFirstLastButtons
+    (page)="onPage($event)"
+  />
+</div>

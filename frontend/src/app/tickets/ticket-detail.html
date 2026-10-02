@@ -1,0 +1,136 @@
+<header>
+  <button matIconButton type="button" (click)="back()" matTooltip="Zurück" aria-label="Zurück">
+    <mat-icon>arrow_back</mat-icon>
+  </button>
+  <h1>{{ isNew() ? 'Neues Ticket' : (loaded()?.title ?? 'Ticket') }}</h1>
+</header>
+
+@if (ticket.isLoading() && !loaded()) {
+  <mat-progress-bar mode="indeterminate" aria-label="Ticket wird geladen" />
+} @else if (ticket.error()) {
+  <p class="message">
+    Das Ticket konnte nicht geladen werden.
+    <button matButton type="button" (click)="ticket.reload()">Erneut versuchen</button>
+  </p>
+} @else {
+  @if (conflict()) {
+    <div class="conflict" role="alert">
+      <mat-icon>sync_problem</mat-icon>
+      <span>
+        Jemand anderes hat das Ticket inzwischen geändert. Lade den aktuellen Stand und trage deine
+        Änderungen danach erneut ein.
+      </span>
+      <button matButton type="button" (click)="reload()" [disabled]="busy()">Neu laden</button>
+    </div>
+  }
+
+  <form novalidate (submit)="$event.preventDefault(); save()">
+    @for (error of form().errors(); track error) {
+      <p class="form-error" role="alert">{{ error.message }}</p>
+    }
+
+    <mat-form-field class="wide">
+      <mat-label>Titel</mat-label>
+      <input matInput [formField]="form.title" />
+      @for (error of form.title().errors(); track error) {
+        <mat-error>{{ error.message }}</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field class="wide">
+      <mat-label>Beschreibung</mat-label>
+      <textarea matInput rows="6" [formField]="form.description"></textarea>
+      @for (error of form.description().errors(); track error) {
+        <mat-error>{{ error.message }}</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field>
+      <mat-label>Status</mat-label>
+      <mat-select [formField]="form.status">
+        @for (status of statuses; track status) {
+          <mat-option [value]="status">{{ statusLabels[status] }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field>
+      <mat-label>Priorität</mat-label>
+      <mat-select [formField]="form.priority">
+        @for (priority of priorities; track priority) {
+          <mat-option [value]="priority">{{ priorityLabels[priority] }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field>
+      <mat-label>Zuständig</mat-label>
+      <input matInput [formField]="form.assignee" />
+      @for (error of form.assignee().errors(); track error) {
+        <mat-error>{{ error.message }}</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field>
+      <mat-label>Fällig am</mat-label>
+      <input matInput type="date" [formField]="form.dueDate" />
+      @for (error of form.dueDate().errors(); track error) {
+        <mat-error>{{ error.message }}</mat-error>
+      }
+    </mat-form-field>
+
+    @if (loaded(); as ticket) {
+      <p class="meta wide">
+        Erstellt {{ ticket.createdAt | date: 'dd.MM.yyyy HH:mm' }} · Geändert
+        {{ ticket.updatedAt | date: 'dd.MM.yyyy HH:mm' }} · Version {{ ticket.version }}
+      </p>
+    }
+
+    <div class="actions wide">
+      <button
+        matButton="filled"
+        type="submit"
+        [disabled]="form().submitting() || busy() || (!isNew() && !form().dirty())"
+      >
+        {{ isNew() ? 'Anlegen' : 'Speichern' }}
+      </button>
+
+      @if (loaded(); as ticket) {
+        @if (ticket.status !== 'done') {
+          <!-- Schließen speichert nur den Status; ungespeicherte Änderungen gingen dabei verloren. -->
+          <span [matTooltip]="form().dirty() ? 'Erst speichern oder verwerfen' : ''">
+            <button
+              matButton="outlined"
+              type="button"
+              (click)="close()"
+              [disabled]="busy() || form().submitting() || form().dirty()"
+            >
+              <mat-icon>task_alt</mat-icon>
+              Schließen
+            </button>
+          </span>
+        }
+      }
+      @if (form().dirty() && !isNew()) {
+        <button matButton type="button" (click)="discard()" [disabled]="form().submitting()">
+          Verwerfen
+        </button>
+      }
+
+      <span class="spacer"></span>
+
+      @if (!isNew()) {
+        <button
+          matButton
+          class="danger"
+          type="button"
+          (click)="delete()"
+          [disabled]="busy() || form().submitting()"
+        >
+          <mat-icon>delete</mat-icon>
+          Löschen
+        </button>
+      }
+    </div>
+  </form>
+}

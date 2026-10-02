@@ -96,12 +96,53 @@ Logs: `symfony server:log` (folgt dem Log, Abbruch mit Strg+C). Stoppen: `symfon
 
 Fehler unter `/api` kommen als Problem Details (RFC 9457) mit `Content-Type: application/problem+json`.
 
+## Frontend starten
+
+Das Backend muss laufen (siehe oben). Dann in einem zweiten Terminal des Devcontainers:
+
+```bash
+cd frontend
+npm ci        # nur beim ersten Mal bzw. nach Änderungen am package-lock.json
+npm start     # ng serve auf Port 4200, lädt bei Änderungen automatisch neu
+```
+
+Im Browser: <http://localhost:4200> (VS Code leitet den Port weiter wie beim Backend).
+
+`ng serve` leitet alles unter `/api` per `proxy.conf.json` an das Backend auf Port 8000 weiter.
+Für den Browser kommen App und API so vom selben Origin, CORS braucht es nicht. Später übernimmt
+das der Reverse Proxy (M4).
+
+**Runtime-Config:** Beim Start lädt die App `/config.json` (lokal aus `frontend/public/`), erst
+danach rendert sie. Darin steht z. B. der Text des Umgebungs-Banners. Weil die Datei nicht in
+den Build eingebaut wird, läuft dasselbe Image später in jeder Umgebung, nur die `config.json`
+wird ausgetauscht. Fehlt sie, startet die App absichtlich nicht.
+
+**UI:** Angular Material (Material 3), Schriften selbst gehostet aus npm-Paketen statt vom
+Google-CDN. Hell/Dunkel folgt standardmäßig dem System; die Wahl im Menü oben rechts landet im
+`localStorage`. Warum nicht PrimeNG: `docs/adr/0001-angular-material-statt-primeng.md`.
+
+**Ticketliste (`/tickets`):** Filter, Sortierung und Seite stehen nur in der URL (Query-Params).
+Der Router schreibt sie in Signal-Inputs der Komponente (`withComponentInputBinding`), daraus
+lädt eine `rxResource` die Seite. Bedienelemente ändern nur die URL; so lassen sich Ansichten
+verlinken, und Zurück/Vor im Browser funktioniert. Ungültige Werte in der URL werden ignoriert.
+API-Fehler zeigt ein Interceptor als Snackbar (`core/problem-details.ts`).
+
+**Ticketformular (`/tickets/new`, `/tickets/:id`):** Signal Form (`@angular/forms/signals`);
+`[formField]` funktioniert auch mit `mat-select`, weil Signal Forms klassische
+`ControlValueAccessor`-Controls über eine Brücke anbinden. Gespeichert wird mit der zuletzt
+geladenen `version`. Bei 409 zeigt die Seite einen Hinweis mit „Neu laden“, bei 422 erscheinen
+die Violations des Backends am jeweiligen Feld. Schließen ist gesperrt, solange es ungespeicherte
+Änderungen gibt, Löschen fragt vorher nach.
+
 ## Tests und Checks
 
 ```bash
 make test             # alles; geht auf dem Host und im Devcontainer
-cd backend && composer check   # dasselbe direkt: cs + phpstan + test
+cd backend && composer check   # Backend direkt: cs + phpstan + test
 composer cs-fix       # Code-Style automatisch korrigieren
+cd frontend && npm run check   # Frontend direkt: prettier + eslint + vitest + build
+npm run format        # Formatierung automatisch korrigieren (Prettier)
+npm test              # Vitest im Watch-Modus, während man entwickelt
 ```
 
 - Die API-Tests laufen gegen eine eigene Postgres-DB **`app_test`** (Doctrine hängt im Test-Env
@@ -146,3 +187,7 @@ installiert. Im VS-Code-Terminal des Containers `claude` starten und beim ersten
 | `podman build … updateUID.Dockerfile` schlägt fehl | Die CLI sucht `localhost/<image>`, Compose taggt aber `docker.io/library/<image>`. Deshalb ist in `devcontainer.json` `updateRemoteUserUID: false` gesetzt; die UID-Anpassung übernimmt `keep-id` |
 | `devcontainer exec psql -c …`: „Unknown argument: c“ | Die CLI wertet Optionen mit `-` auch für den Befehl im Container aus. Stattdessen `podman compose -f .devcontainer/compose.yaml exec workspace …` nutzen (so machen es auch die `make`-Targets) |
 | `perl: warning: Setting locale failed`          | Die Host-Locale fehlt im Image. Erzeugt werden `de_DE.UTF-8` und `en_US.UTF-8` (Dockerfile); weitere bei Bedarf dort in `locale.gen` ergänzen |
+| npm: „packages have install scripts not yet covered by allowScripts“ | npm 11 führt Install-Skripte nur noch nach Freigabe aus. Entschieden wird pro Paket in `allowScripts` (`frontend/package.json`); die Build-Tools dort laufen mit ihren mitgelieferten Binaries, ihre Skripte sind abgelehnt. Bei einem neuen Paket: `npm install-scripts ls`, dann `approve` oder `deny` |
+| API: `relation "ticket" does not exist` (500)   | Die Wegwerf-DB ist nach einem Neustart des `db`-Containers leer. Schema und Demo-Daten neu einspielen: `doctrine:migrations:migrate -n` und `doctrine:fixtures:load -n` (siehe *Backend starten*) |
+| `npm run check`: Prettier meckert über `angular.json` | Die Angular CLI schreibt die Datei in ihrem eigenen Format (z. B. nach der Analytics-Frage). `npm run format` behebt es |
+| Vitest: „Test timed out“ in Komponententests mit `HttpTestingController` | `fixture.whenStable()` wartet auch auf offene HTTP-Requests (eine `resource` zählt als laufende Aufgabe). Vor `expectOne()` deshalb nur `TestBed.tick()` aufrufen, `whenStable()` erst nach `flush()` |

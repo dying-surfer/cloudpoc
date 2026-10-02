@@ -1,0 +1,71 @@
+// Globales Theme. Material 3 legt seine Farben, Schriften und Abstände als CSS-Variablen
+// (--mat-sys-*) an; eigene Komponenten nutzen dieselben Variablen.
+// Doku: https://material.angular.dev/guide/theming
+//
+// Schriften (Roboto, Material Symbols) kommen aus npm-Paketen und werden in angular.json
+// unter "styles" eingebunden, nicht vom Google-CDN: kein Datenabfluss an Dritte, und die
+// App funktioniert auch ohne Internetzugang.
+@use '@angular/material' as mat;
+
+// Paletten aus Nord-Farben (https://www.nordtheme.com), erzeugt mit
+//   ng generate @angular/material:theme-color --primary-color='#5E81AC' --tertiary-color='#B48EAD'
+//     --error-color='#BF616A' --neutral-color='#4C566A' --neutral-variant-color='#4C566A'
+//     --include-high-contrast=false --directory=src/ --is-scss
+// Andere Grundfarben: Befehl mit neuen Werten erneut ausführen, Datei überschreiben.
+@use './theme-colors' as nord;
+
+html {
+  height: 100%;
+
+  // Hell/Dunkel: Mit `theme-type: color-scheme` erzeugt mat.theme() jede Farbe als
+  // light-dark(hell, dunkel). Welche Hälfte gilt, entscheidet die CSS-Eigenschaft
+  // color-scheme. Der Standard `light dark` folgt der Systemeinstellung; ThemeService
+  // überschreibt das am <html>-Element, wenn der User fest hell oder dunkel wählt.
+  color-scheme: light dark;
+
+  @include mat.theme(
+    (
+      color: (
+        theme-type: color-scheme,
+        primary: nord.$primary-palette,
+        tertiary: nord.$tertiary-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+
+  // Weichere Flächen und Texte. M3 legt sie auf feste Stufen der Neutral-Palette: dunkel
+  // fast schwarz (#111) mit fast weißer Schrift, hell fast weiß mit fast schwarzer Schrift.
+  // Hier stattdessen Nords "Polar Night" (dunkel) und "Snow Storm" (hell). Der Kontrast
+  // bleibt hoch (Text zu Fläche etwa 10:1), wirkt aber ruhiger.
+  // Reihenfolge der Container: lowest → highest wird hell dunkler, dunkel heller.
+  @include mat.theme-overrides(
+    (
+      background: light-dark(#eef1f5, #2e3440),
+      surface: light-dark(#eef1f5, #2e3440),
+      surface-dim: light-dark(#d8dee9, #292e39),
+      surface-bright: light-dark(#f6f7fa, #4c566a),
+      surface-container-lowest: light-dark(#f6f7fa, #292e39),
+      surface-container-low: light-dark(#e9edf2, #323845),
+      surface-container: light-dark(#e5e9f0, #3b4252),
+      surface-container-high: light-dark(#dee3ea, #434c5e),
+      surface-container-highest: light-dark(#d8dee9, #4c566a),
+      on-background: light-dark(#2e3440, #e5e9f0),
+      on-surface: light-dark(#2e3440, #e5e9f0),
+      on-surface-variant: light-dark(#4c566a, #b8c1d1),
+      outline: light-dark(#7b869a, #7b869a),
+      outline-variant: light-dark(#c5ccd8, #4c566a),
+      inverse-surface: light-dark(#3b4252, #d8dee9),
+      inverse-on-surface: light-dark(#eceff4, #2e3440),
+    )
+  );
+}
+
+body {
+  height: 100%;
+  margin: 0;
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+}

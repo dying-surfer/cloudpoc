@@ -1,0 +1,100 @@
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+h1 {
+  margin: 0;
+  font: var(--mat-sys-headline-small);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 1rem;
+}
+
+.search {
+  flex: 1 1 18rem;
+}
+
+.table-container {
+  border-radius: var(--mat-sys-corner-medium);
+  overflow: hidden;
+  background: var(--mat-sys-surface-container-low);
+}
+
+/* Platz der Ladeleiste immer reservieren, damit die Tabelle nicht springt. */
+.hidden {
+  visibility: hidden;
+}
+
+.table-scroll {
+  max-height: calc(100vh - 20rem);
+  min-height: 10rem;
+  overflow: auto;
+}
+
+table {
+  width: 100%;
+}
+
+td,
+th {
+  white-space: nowrap;
+}
+
+.mat-column-title {
+  width: 100%;
+  white-space: normal;
+}
+
+.badge {
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--mat-sys-corner-small);
+  font: var(--mat-sys-label-medium);
+  background: var(--mat-sys-surface-container-highest);
+}
+
+.badge[data-status='in_progress'] {
+  background: var(--mat-sys-secondary-container);
+  color: var(--mat-sys-on-secondary-container);
+}
+
+.badge[data-status='done'] {
+  background: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+}
+
+td[data-priority='high'] {
+  color: var(--mat-sys-error);
+  font-weight: 500;
+}
+
+.empty {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--mat-sys-on-surface-variant);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--mat-sys-surface-container-high);
+}
+
+.mat-column-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mat-column-title a:hover,
+.mat-column-title a:focus-visible {
+  text-decoration: underline;
+}

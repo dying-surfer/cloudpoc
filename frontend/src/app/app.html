@@ -1,0 +1,36 @@
+@if (config().banner; as banner) {
+  <div class="env-banner" role="status">{{ banner }}</div>
+}
+
+<mat-toolbar>
+  <a class="brand" routerLink="/">cloudpoc</a>
+  <nav>
+    <a matButton routerLink="/tickets" routerLinkActive="active">Tickets</a>
+  </nav>
+  <span class="spacer"></span>
+  <button
+    matIconButton
+    [matMenuTriggerFor]="themeMenu"
+    [matTooltip]="'Farbschema: ' + currentThemeOption().label"
+    aria-label="Farbschema wählen"
+  >
+    <mat-icon>{{ currentThemeOption().icon }}</mat-icon>
+  </button>
+  <mat-menu #themeMenu="matMenu">
+    @for (option of themeOptions; track option.mode) {
+      <button
+        mat-menu-item
+        role="menuitemradio"
+        [attr.aria-checked]="option.mode === theme.mode()"
+        (click)="theme.mode.set(option.mode)"
+      >
+        <mat-icon>{{ option.icon }}</mat-icon>
+        <span>{{ option.label }}</span>
+      </button>
+    }
+  </mat-menu>
+</mat-toolbar>
+
+<main>
+  <router-outlet />
+</main>
