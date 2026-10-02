@@ -106,6 +106,34 @@ stack-down: ## Stack stoppen und entfernen, die Daten (Volume) bleiben
 stack-destroy: ## Stack samt DB-Volume entfernen (alle Daten weg!)
 	$(STACK) down -v
 
+# --- Smoke-Tests (Playwright, Ordner e2e/) ---------------------------------------
+# stack-smoke läuft im offiziellen Playwright-Image: Browser und Systembibliotheken
+# sind dort drin und passen exakt zur Version. Der Container hängt im Compose-Netz
+# und spricht den Proxy direkt an. Die Version kommt aus e2e/package.json.
+# e2e-check prüft nur statisch (Prettier, TypeScript, Testliste), geht also überall.
+
+PLAYWRIGHT_VERSION := $(shell sed -n 's/.*"@playwright\/test": "\(.*\)".*/\1/p' e2e/package.json)
+PLAYWRIGHT_IMAGE   = mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
+
+ifneq ($(shell command -v podman 2>/dev/null),)
+E2E = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/e2e workspace
+else
+E2E = cd e2e &&
+endif
+
+.PHONY: stack-smoke e2e-install e2e-check
+
+stack-smoke: ## Playwright-Smoke-Tests gegen den laufenden Stack (Bericht: e2e/playwright-report/)
+	podman run --rm --init --ipc=host --network cloudpoc_default \
+		-v $(CURDIR)/e2e:/e2e:z -w /e2e -e BASE_URL=http://proxy:8080 -e CI=1 \
+		$(PLAYWRIGHT_IMAGE) sh -c 'npm ci --no-audit --no-fund && npx playwright test'
+
+e2e-install: ## npm-Abhängigkeiten der Smoke-Tests installieren
+	@$(E2E) npm ci
+
+e2e-check: ## Smoke-Tests statisch prüfen: Prettier, TypeScript, Testliste
+	@$(E2E) npm run check
+
 # --- Datenbank des Stacks (nur auf dem Host) -------------------------------------
 # Die Befehle laufen per exec im db-Container: Dort passen pg_dump/pg_restore immer
 # zur Server-Version, und die DB braucht keinen veröffentlichten Port.
@@ -172,4 +200,4 @@ dev-db-import: ## Anonymisierten Dump in die Dev-DB einspielen (FILE=db/dumps/cl
 
 # --- Alles ---------------------------------------------------------------------
 
-test: backend-check frontend-check ## Alle Checks und Tests (Backend und Frontend)
+test: backend-check frontend-check e2e-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch)

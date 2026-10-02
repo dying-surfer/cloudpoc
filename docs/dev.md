@@ -157,6 +157,24 @@ npm test              # Vitest im Watch-Modus, während man entwickelt
 - Testdaten erzeugen die Tests selbst mit `TicketFactory`, statt auf die Fixtures zu bauen.
   So steht im Test, wovon er abhängt.
 
+### Smoke-Tests gegen den Stack (Playwright)
+
+`e2e/` enthält wenige Playwright-Tests, die nur das Zusammenspiel prüfen: Proxy-Routing,
+Health-Endpoints, Banner aus `config.json`, ein Ticket anlegen, finden und löschen.
+
+```bash
+make stack-up && make stack-smoke   # auf dem Host; Bericht danach in e2e/playwright-report/
+make e2e-check                      # überall: Prettier, TypeScript, Testliste (Teil von make test)
+```
+
+- `stack-smoke` startet das offizielle Image `mcr.microsoft.com/playwright` im Compose-Netz
+  (`cloudpoc_default`) mit `BASE_URL=http://proxy:8080`. Browser und Systembibliotheken bringt das
+  Image mit; im Devcontainer fehlen sie (Chromium startet dort nicht, `libglib-2.0.so.0` fehlt).
+- Die Image-Version kommt aus `e2e/package.json`. `@playwright/test` ist dort exakt gepinnt, weil
+  Bibliothek und Browser im Image zusammenpassen müssen.
+- Der Test schreibt in die persistente Stack-DB. Er legt ein Ticket mit eindeutigem Titel an und
+  räumt es auch dann wieder ab, wenn er scheitert.
+
 ## Claude Code im Devcontainer
 
 Claude Code ist über das Feature `ghcr.io/anthropics/devcontainer-features/claude-code` im Image

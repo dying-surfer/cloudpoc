@@ -87,7 +87,7 @@ Makefile                einheitliche Entry-Points
 - [ ] `deploy/compose/compose.yaml` mit Reverse Proxy, frontend, backend, migrate (one-shot) und
       postgres (benanntes Volume)
 - [ ] DB-Skripte: `make db-reset`, `db-dump`, `db-import FILE=…`, `db/anonymize.sql`
-- [ ] Playwright-Smoke-Test gegen den Stack
+- [ ] Playwright-Smoke-Test gegen den Stack (`e2e/`, `make stack-smoke`)
 
 **Fertig, wenn:** `podman compose up` die App bereitstellt und die Daten ein `down`/`up` überleben.
 
