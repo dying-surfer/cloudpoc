@@ -586,3 +586,24 @@ Fehlern). Danach mit `--set preStopSleepSeconds=5 --set strategy=RollingUpdate` 
 
 Zurück auf die Staging-Werte: `helm upgrade` ohne `-f values-prod.yaml` und ohne `--reset-then-reuse-values`,
 nur mit `--set image.tag=…`.
+
+### Traefik-Access-Logs
+
+Das von k3s mitgebrachte Traefik (getestet: 3.7.13) loggt standardmäßig nur eigene Fehler, nicht
+einzelne Requests. Eine 502 oder 504 taucht dort also nicht auf. Access-Logs einschalten:
+
+```bash
+kubectl apply -f deploy/k3s/traefik-config.yaml
+kubectl rollout status deployment/traefik -n kube-system
+```
+
+`deploy/k3s/traefik-config.yaml` ist eine **HelmChartConfig**: k3s installiert Traefik selbst per
+Helm-Chart (die `helm-install-traefik`-Jobs aus Abschnitt 2), und über diese Ressource mit
+gleichem Namen überschreibt man dessen Values. Danach eine Zeile pro Request:
+
+```bash
+kubectl logs -n kube-system deploy/traefik -f | grep /api/
+# … "GET /api/tickets HTTP/1.1" 200 … "staging-cloudpoc-…@kubernetes" "http://10.42.0.23:8080" 4ms
+```
+
+Die vorletzte Angabe ist der Pod, an den Traefik den Request geschickt hat, die letzte die Dauer.
