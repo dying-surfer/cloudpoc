@@ -126,3 +126,33 @@ jobs:
           # Layer-Cache im GitHub-Actions-Cache, je Image ein eigener Bereich
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,scope=${{ matrix.component }},mode=max
+
+  scan:
+    name: Trivy ${{ matrix.component }}
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      # Beide Images scannen, auch wenn eins rot wird: So sieht man alle Funde auf einmal
+      fail-fast: false
+      matrix:
+        component: [backend, frontend]
+    steps:
+      # Auf Commit-SHA gepinnt statt auf ein Tag: Im März 2026 wurden Tags dieser Action
+      # bei einem Supply-Chain-Angriff auf Schadcode umgebogen. Ein SHA lässt sich nicht
+      # verschieben; Dependabot hält ihn aktuell und schreibt die Version in den Kommentar.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          # Genau das Image, das der images-Job eben gepusht hat
+          image-ref: ghcr.io/${{ github.repository_owner }}/cloudpoc-${{ matrix.component }}:${{ github.sha }}
+          format: table
+          # Rot nur bei HIGH/CRITICAL, für die es schon einen Fix gibt (sonst kann man nichts tun)
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          # Die Pakete in GHCR sind privat; Trivy meldet sich mit dem Job-Token an
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
