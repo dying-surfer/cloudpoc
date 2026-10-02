@@ -740,15 +740,3 @@ make k8s-secrets NS=staging
 Kein Neustart nötig: Das Pull-Secret liest der kubelet bei jedem Image-Pull neu. Danach den alten
 Token auf GitHub löschen. Ein abgelaufener Token fällt erst beim nächsten Pull auf (neuer Pod auf
 einem Node ohne das Image, neuer Tag), als `ImagePullBackOff`.
-
-**DB-Passwort** (Operator): nicht über SOPS. Laut CNPG-Doku überträgt der Operator ein im Secret
-geändertes Passwort in die Datenbank. **Bei uns noch nicht getestet.** Ablauf dann:
-
-```bash
-kubectl patch secret cloudpoc-db-app -n staging --type merge \
-  -p "{\"stringData\":{\"password\":\"$(openssl rand -hex 24)\"}}"
-kubectl rollout restart deployment/cloudpoc-backend -n staging
-```
-
-Das Secret enthält das Passwort zusätzlich in `uri`, `jdbc-uri` und `pgpass`. Das Chart nutzt nur
-`password`.
