@@ -108,11 +108,12 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 - [ ] Stack auf der VM: persistentes DB-Volume, `.env` nur auf der VM, `restart: unless-stopped`
 - [ ] Self-hosted Runner in der VM: eigener unprivilegierter User, nur vom Deploy-Workflow genutzt
       (öffentliches Repo: nie bei `pull_request`, kein Code aus fremden PRs auf der VM)
-- [ ] Deploy-Workflow: nach grüner CI auf `main` dasselbe Image (SHA-Tag) auf der VM ausrollen,
-      Migration als One-Shot wie im Stack
+- [ ] Deploy-Workflow: auf Knopfdruck eine beliebige Version (SHA-Tag aus der CI) auf der VM ausrollen,
+      Migration als One-Shot wie im Stack. Manuell statt automatisch, weil die VM nur lokal auf dem
+      Laptop läuft (automatischer Deploy nach Staging: M9)
 - [ ] Backup: `make db-dump` auf der VM, Restore-Test mit `make db-import`
 
-**Fertig, wenn:** Ein Push auf `main` ohne Handgriff auf der VM landet, die Daten ein Redeploy
+**Fertig, wenn:** Jede Version aus der CI per Knopfdruck auf der VM landet, die Daten ein Redeploy
 überleben und ein Restore aus einem Dump gelingt.
 
 ### M7 – Kubernetes: Helm-Chart & k3s

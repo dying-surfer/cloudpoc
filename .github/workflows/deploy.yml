@@ -1,16 +1,23 @@
-# Deploy: Nach grüner CI auf main rollt der Self-hosted Runner in der VM genau die
-# Images aus, die die CI gebaut hat (Tag = Commit-SHA). Einrichtung: docs/vm.md.
+# Deploy: Rollt auf Knopfdruck eine beliebige Version auf die VM aus, über den
+# Self-hosted Runner dort (Einrichtung: docs/vm.md). Die VM ist eine lokale Spielwiese,
+# darum manuell statt automatisch nach jeder CI: Actions → Deploy → Run workflow.
 #
-# Absicherung (öffentliches Repo): workflow_run wird nur aus der Workflow-Datei auf
-# main ausgelöst, ein PR kann diese Datei also nicht für sich ändern. Zusätzlich nur
-# Läufe, die durch einen Push auf main entstanden sind, nie durch einen PR.
+# Version = Commit-SHA, Branch oder Tag. Ausgerollt werden die Images mit dem Commit-SHA
+# als Tag (build once, deploy many). Die gibt es für jeden Commit, den die CI per Push
+# auf main gebaut hat.
+#
+# Absicherung (öffentliches Repo): workflow_dispatch dürfen nur User mit Schreibrecht
+# auslösen, PRs aus Forks nicht.
 name: Deploy
+run-name: Deploy ${{ inputs.ref }}
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Version (voller Commit-SHA, Branch oder Tag)
+        required: true
+        default: main
 
 # Deploys nacheinander, nie abbrechen (ein halber Deploy ist schlimmer als ein später)
 concurrency:
@@ -24,20 +31,23 @@ permissions:
 jobs:
   deploy:
     name: Deploy auf die VM
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
     runs-on: [self-hosted, vm]
     timeout-minutes: 15
     env:
-      SHA: ${{ github.event.workflow_run.head_sha }}
       CONTAINER: docker
       ENV_FILE: /srv/cloudpoc/.env
-      BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-backend:${{ github.event.workflow_run.head_sha }}
-      FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-frontend:${{ github.event.workflow_run.head_sha }}
+      REGISTRY: ghcr.io/${{ github.repository_owner }}
     steps:
-      # Genau der Commit, den die CI geprüft hat (nicht der aktuelle Stand von main)
       - uses: actions/checkout@v5
         with:
-          ref: ${{ env.SHA }}
+          ref: ${{ inputs.ref }}
+      # Branch oder Tag auf den Commit-SHA auflösen, der ist der Image-Tag
+      - name: Images bestimmen
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "BACKEND_IMAGE=$REGISTRY/cloudpoc-backend:$sha" >> "$GITHUB_ENV"
+          echo "FRONTEND_IMAGE=$REGISTRY/cloudpoc-frontend:$sha" >> "$GITHUB_ENV"
+          echo "Version: $sha ($(git log -1 --format=%s))" >> "$GITHUB_STEP_SUMMARY"
       # Die Pakete in GHCR sind privat. Das Token gilt nur für diesen Lauf,
       # die Action meldet sich am Ende wieder ab.
       - uses: docker/login-action@v3
@@ -45,6 +55,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Vorab prüfen, damit ein fehlendes Image nicht erst mitten im Deploy auffällt
+      - name: Images vorhanden?
+        run: |
+          for image in "$BACKEND_IMAGE" "$FRONTEND_IMAGE"; do
+            docker manifest inspect "$image" > /dev/null || {
+              echo "::error::$image fehlt in GHCR. Nur Commits, die die CI auf main gebaut hat, haben Images."
+              exit 1
+            }
+          done
       - run: make deploy
       # Der Port kommt aus HTTP_PORT in der .env der VM (docs/vm.md: 8080)
       - name: Readiness prüfen

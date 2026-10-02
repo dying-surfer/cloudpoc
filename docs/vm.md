@@ -1,8 +1,9 @@
 # VM: Deployment via Compose
 
 Eine Debian-VM auf dem Host, darauf **eine** Instanz des Stacks aus `deploy/compose/`.
-Ausgerollt wird automatisch: Nach grüner CI auf `main` holt ein **Self-hosted Runner** in der VM
-die gerade gebauten Images (SHA-Tag) aus GHCR und startet den Stack damit neu.
+Ausgerollt wird auf Knopfdruck: Der Workflow *Deploy* auf GitHub startet einen Job auf dem
+**Self-hosted Runner** in der VM. Der holt die Images der gewählten Version (SHA-Tag) aus GHCR und
+startet den Stack damit neu.
 
 ```
 GitHub ── Job "deploy" ──▶ Runner in der VM (baut die Verbindung selbst auf, von innen nach außen)
@@ -152,7 +153,7 @@ Stolpersteine:
 Jeder kann einen PR öffnen und darin Workflows ändern. Damit kein fremder Code auf der VM läuft:
 
 - Nur der Deploy-Workflow nutzt `runs-on: [self-hosted, vm]`, und er startet **nie** bei
-  `pull_request`, nur nach CI auf `main`. Ändert ein PR einen Workflow so, dass er den Runner
+  `pull_request`, nur manuell (`workflow_dispatch`, dürfen nur User mit Schreibrecht). Ändert ein PR einen Workflow so, dass er den Runner
   nutzen würde, läuft der Lauf erst nach deiner Freigabe (nächster Punkt).
 - *Settings → Actions → General → Approval for running fork pull request workflows from
   contributors*: **Require approval for all external contributors**.
@@ -160,16 +161,21 @@ Jeder kann einen PR öffnen und darin Workflows ändern. Damit kein fremder Code
 
 ## 6. Deploy
 
-`.github/workflows/deploy.yml` startet nach jedem **grünen CI-Lauf auf `main`**, der durch einen Push
-entstanden ist (auch ein PR-Merge ist ein Push). PR-Läufe deployen nie. Der Job läuft auf dem Runner
-mit Label `vm`, checkt genau den geprüften Commit aus und ruft `make deploy` mit den SHA-Images auf:
+`.github/workflows/deploy.yml` startet nur von Hand: *Actions → Deploy → Run workflow*. Als Version
+geht ein voller Commit-SHA, ein Branch oder ein Tag (Standard: `main`). Der Workflow löst sie auf
+den Commit-SHA auf, prüft, ob es Images mit diesem Tag in GHCR gibt, und ruft dann `make deploy` auf:
 `docker compose pull` und `up -d`. Dabei läuft `migrate` einmal, dann starten `backend`, `frontend`
 und `proxy` neu. Das DB-Volume bleibt.
 
-Wichtig: `workflow_run` wirkt nur aus der Workflow-Datei auf `main`. Der erste Deploy passiert also
-erst nach dem Merge, vorher kann der Workflow nicht auslösen.
+Images gibt es für jeden Commit, den die CI per Push auf `main` gebaut hat. Ein Branch-Stand ohne
+solchen CI-Lauf (z. B. ein Feature-Branch) bricht mit „fehlt in GHCR“ ab. Den Button *Run workflow*
+zeigt GitHub erst, wenn die Workflow-Datei auf `main` liegt.
 
-Auf GitHub unter *Actions → Deploy* zu sehen. In der VM als `admin` prüfen:
+**Ältere Version (Rollback):** Einfach deren SHA eingeben. Migrationen werden dabei **nicht**
+zurückgedreht: Hat eine neuere Version das Schema geändert, läuft der alte Code gegen das neue
+Schema. Ohne neue Migrationen dazwischen ist das unkritisch.
+
+Die Zusammenfassung des Laufs zeigt, welcher Commit ausgerollt wurde. In der VM als `admin` prüfen:
 
 ```bash
 sudo docker ps -a --filter label=com.docker.compose.project=cloudpoc
@@ -250,8 +256,8 @@ sudo systemctl restart docker
 ```
 
 Achtung: Der Treiber gilt nur für **neu erzeugte** Container, `db` und `proxy` behalten sonst den
-alten. Also den Stack einmal entfernen (das DB-Volume bleibt) und auf GitHub den letzten Lauf von
-*Actions → Deploy* per *Re-run all jobs* wiederholen:
+alten. Also den Stack einmal entfernen (das DB-Volume bleibt) und auf GitHub einen Deploy
+starten (*Actions → Deploy → Run workflow*):
 
 ```bash
 sudo docker compose -p cloudpoc down
