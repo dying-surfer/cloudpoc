@@ -274,6 +274,9 @@ Das Chart liegt in `deploy/helm/cloudpoc/`. Ein **Chart** ist ein Ordner mit Vor
 in die Vorlagen ein und schickt das Ergebnis an die API. Eine installierte Instanz heißt
 **Release**; Helm merkt sich jede Version davon (`helm history`) und kann zurückrollen.
 
+Prüfen ohne Cluster: `make helm-check` (helm lint und kubeconform für alle Werte-Varianten,
+Teil von `make test` und der CI).
+
 Das Chart wächst schrittweise. Im ersten Schritt nur das Frontend:
 
 | Datei                                | Objekt       | Aufgabe                                                      |

@@ -209,6 +209,21 @@ dev-db-import: ## Anonymisierten Dump in die Dev-DB einspielen (FILE=db/dumps/cl
 	$(WORKSPACE) pg_restore -d app --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error $(FILE)
 	$(BACKEND) php bin/console doctrine:migrations:migrate -n
 
+# --- Helm-Chart (deploy/helm/) --------------------------------------------------
+# Prüft ohne Cluster (lint + kubeconform), läuft wie die anderen Checks im
+# Devcontainer. helm und kubeconform bringt dessen Image mit.
+
+ifneq ($(shell command -v podman 2>/dev/null),)
+HELM_CHECK = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc workspace deploy/helm/check.sh
+else
+HELM_CHECK = deploy/helm/check.sh
+endif
+
+.PHONY: helm-check
+
+helm-check: ## Helm-Chart prüfen: helm lint, kubeconform (alle Werte-Varianten)
+	@$(HELM_CHECK)
+
 # --- Alles ---------------------------------------------------------------------
 
-test: backend-check frontend-check e2e-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch)
+test: backend-check frontend-check e2e-check helm-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch, Helm-Chart)

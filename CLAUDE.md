@@ -83,3 +83,12 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     Nie `pull_request` auf dem Self-hosted Runner (öffentliches Repo).
   - Backup auf der VM: `make db-dump DUMP_DIR=/srv/cloudpoc/dumps` (nicht im Checkout, den räumt der nächste Deploy);
     für `db-import` `BACKEND_IMAGE` auf das laufende Image setzen.
+- **M7** (Kubernetes: Helm-Chart & k3s): in Arbeit auf `m7-k8s`. Anleitung: `docs/k8s.md`.
+  - k3s-VM `192.168.122.51` (Single-Node, Traefik als Ingress), CNPG-Operator 1.30.1 (Chart 0.29.1).
+    `kubectl`/`helm` nur auf dem Host (kubeconfig per `KUBECONFIG`), nie im Devcontainer.
+  - Chart `deploy/helm/cloudpoc/`: `image.tag` Pflicht (Commit-SHA), `db.mode` `cnpg` | `external`,
+    Migrationen als Hook-Job `post-install,pre-upgrade`, `values-prod.yaml` (HPA, PDB).
+    Pull-Secret `ghcr-pull` und `cloudpoc-backend` (APP_SECRET) vorerst von Hand im Namespace `staging`.
+  - Prüfen: `make helm-check` (`deploy/helm/check.sh`, alle Werte-Varianten). Neue Varianten dort eintragen.
+  - Upgrades mit `--reset-then-reuse-values`, nie `--reuse-values` (übernimmt neue Chart-Defaults nicht).
+  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, SOPS, Deploy-Workflow.
