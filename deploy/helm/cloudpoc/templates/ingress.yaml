@@ -1,0 +1,23 @@
+# Eingang von außen, übernimmt die Rolle des nginx-Proxys aus dem Compose-Stack.
+# Vorerst nur das Frontend; /api und die Health-Endpoints folgen mit dem Backend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "cloudpoc.fullname" . }}
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "cloudpoc.fullname" . }}-frontend
+                port:
+                  name: http
+      {{- with .Values.ingress.host }}
+      host: {{ . | quote }}
+      {{- end }}

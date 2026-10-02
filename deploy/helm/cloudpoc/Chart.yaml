@@ -1,0 +1,7 @@
+apiVersion: v2
+name: cloudpoc
+description: Ticket-CRUD (Symfony + Angular + Postgres) für Kubernetes
+type: application
+# Version des Charts selbst. Die App-Version kommt pro Deploy als image.tag (Commit-SHA).
+version: 0.1.0
+kubeVersion: ">=1.33.0-0"

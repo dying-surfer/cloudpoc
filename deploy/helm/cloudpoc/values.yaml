@@ -1,0 +1,32 @@
+# Standardwerte des Charts. Pro Umgebung überschreibt eine eigene values-Datei
+# (z. B. values-staging.yaml) oder --set nur das, was dort anders ist.
+
+image:
+  registry: ghcr.io/dying-surfer
+  # Pflicht: voller Commit-SHA aus der CI (build once, deploy many), z. B.
+  # --set image.tag=$(git rev-parse origin/main)
+  tag: ""
+  pullPolicy: IfNotPresent
+  # Die Pakete in GHCR sind privat: Name eines Secrets vom Typ
+  # kubernetes.io/dockerconfigjson im selben Namespace (Anlage: docs/k8s.md)
+  pullSecret: ghcr-pull
+
+frontend:
+  replicas: 1
+  # Wird als /config.json ausgeliefert (Runtime-Config der Angular-App)
+  config:
+    environment: staging
+    banner: STAGING · k3s
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+ingress:
+  # k3s bringt Traefik als Ingress-Controller mit
+  className: traefik
+  # Leer = jeder Hostname. Mehrere Umgebungen im selben Cluster brauchen
+  # unterschiedliche Hosts, sonst kollidieren ihre Routen.
+  host: ""

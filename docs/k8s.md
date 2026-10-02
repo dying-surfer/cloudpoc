@@ -265,3 +265,85 @@ Aufräumen (der Namespace samt allem darin, auch dem Volume):
 ```bash
 kubectl delete namespace cnpg-test
 ```
+
+## 5. App per Helm-Chart: zuerst das Frontend
+
+Das Chart liegt in `deploy/helm/cloudpoc/`. Ein **Chart** ist ein Ordner mit Vorlagen
+(`templates/`) für Kubernetes-Objekte und Standardwerten (`values.yaml`). `helm` setzt die Werte
+in die Vorlagen ein und schickt das Ergebnis an die API. Eine installierte Instanz heißt
+**Release**; Helm merkt sich jede Version davon (`helm history`) und kann zurückrollen.
+
+Das Chart wächst schrittweise. Im ersten Schritt nur das Frontend:
+
+| Datei                                | Objekt       | Aufgabe                                                      |
+|--------------------------------------|--------------|--------------------------------------------------------------|
+| `templates/frontend-deployment.yaml` | Deployment   | Hält `replicas` Pods mit dem Frontend-Image am Laufen         |
+| `templates/frontend-service.yaml`    | Service      | Feste Adresse vor den Pods, nur im Cluster                    |
+| `templates/frontend-configmap.yaml`  | ConfigMap    | `config.json` der Umgebung, im Pod als Datei eingehängt       |
+| `templates/ingress.yaml`             | Ingress      | Regel für Traefik: `/` → Frontend-Service                     |
+| `templates/_helpers.tpl`             | –            | Gemeinsame Bausteine: Namen, Labels, Image                   |
+
+Was im Cluster daraus wird:
+
+```
+Browser ─▶ Traefik ─(Ingress-Regel "/")─▶ Service <release>-frontend ─▶ Pod(s) nginx :8080
+                                                                         └ /config.json aus der ConfigMap
+```
+
+### Pull-Secret für GHCR
+
+Die Images in GHCR sind privat, der Cluster braucht Zugangsdaten zum Herunterladen. Auf GitHub
+unter *Settings → Developer settings → Personal access tokens → Tokens (classic)* ein Token nur
+mit dem Scope **`read:packages`** anlegen (GHCR akzeptiert keine fine-grained Tokens), Ablaufdatum
+setzen. Dann auf dem Host:
+
+```bash
+export KUBECONFIG=~/.kube/cloudpoc-k3s.yaml
+kubectl create namespace staging-demo
+kubectl create secret docker-registry ghcr-pull -n staging-demo \
+  --docker-server=ghcr.io --docker-username=dying-surfer \
+  --docker-password='<Token>'
+```
+
+Das Secret gilt nur in diesem Namespace (jede Umgebung braucht ihr eigenes). Später verwaltet
+SOPS solche Secrets im Repo, vorerst legen wir es von Hand an.
+
+### Installieren
+
+Im Repo auf dem Host. Der Image-Tag muss ein Commit sein, für den die CI Images gebaut hat (jeder
+Push auf `main`):
+
+```bash
+git fetch
+helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging-demo \
+  --set image.tag=$(git rev-parse origin/main) --wait
+```
+
+Ohne `image.tag` bricht Helm mit einer Meldung ab: Ein Deploy ohne genaue Version soll es nicht
+geben (kein `:latest`).
+
+Prüfen:
+
+```bash
+helm list -n staging-demo                        # cloudpoc   deployed
+kubectl get deploy,pods,svc,ingress -n staging-demo
+curl -s http://192.168.122.51/config.json        # {"banner": "STAGING · k3s", …}
+curl -s http://192.168.122.51/ | head -5         # index.html der Angular-App
+```
+
+Im Browser `http://192.168.122.51/`: Die App lädt und zeigt das Banner, die Ticket-Liste meldet
+aber einen Fehler. Das ist erwartet, das Backend fehlt noch.
+
+**Config ändern und neu ausrollen:** Mit einem anderen Wert für das Banner sieht man, wie Helm
+eine neue Release-Version erzeugt und Kubernetes die Pods austauscht:
+
+```bash
+helm upgrade cloudpoc deploy/helm/cloudpoc -n staging-demo --reuse-values \
+  --set frontend.config.banner="STAGING · geändert" --wait
+kubectl get pods -n staging-demo                 # neuer Pod-Name: neue Config = neues Pod-Template
+helm history cloudpoc -n staging-demo            # Revision 1 und 2
+helm rollback cloudpoc 1 -n staging-demo --wait  # zurück zum alten Banner
+```
+
+Der Pod wird ausgetauscht, weil das Pod-Template eine Prüfsumme der ConfigMap trägt
+(`checksum/config`). Ohne sie bliebe der alte Pod mit der alten Datei stehen.
