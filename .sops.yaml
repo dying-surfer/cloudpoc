@@ -1,0 +1,11 @@
+# Regeln für sops (Secrets verschlüsselt im Repo, Anleitung: docs/k8s.md).
+# sops sucht diese Datei vom aktuellen Verzeichnis aufwärts, also im Repo aufrufen.
+# Hier stehen nur öffentliche age-Schlüssel: Mit ihnen lässt sich verschlüsseln,
+# entschlüsseln nur mit dem privaten Schlüssel (~/.config/sops/age/keys.txt auf dem Host).
+creation_rules:
+  # Kubernetes-Secrets für staging. Verschlüsselt werden nur die Werte unter
+  # data/stringData, Name und Namespace bleiben lesbar (sichtbar im Diff).
+  # Weitere Umgebungen bekommen eine eigene Regel (ggf. eigener Schlüssel).
+  - path_regex: deploy/secrets/staging/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age14d8ta7ch7n4jnx096fnvlmvqmvvzzaty7sf6vmrlcyq25h8439fs5328xk
