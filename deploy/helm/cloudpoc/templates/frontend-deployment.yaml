@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/component: frontend
 spec:
   replicas: {{ .Values.frontend.replicas }}
+  strategy:
+    {{- include "cloudpoc.strategy" . | nindent 4 }}
   selector:
     matchLabels:
       {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "frontend") | nindent 6 }}
@@ -47,6 +49,8 @@ spec:
               path: /config.json
               port: http
             periodSeconds: 10
+          lifecycle:
+            {{- include "cloudpoc.lifecycle" . | nindent 12 }}
           resources:
             {{- toYaml .Values.frontend.resources | nindent 12 }}
           securityContext:

@@ -6,7 +6,13 @@ metadata:
     {{- include "cloudpoc.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 spec:
+  # Mit HPA kein replicas: Sonst setzte jedes helm upgrade die Anzahl zurück, die der
+  # HPA gerade eingestellt hat.
+  {{- if not .Values.backend.autoscaling.enabled }}
   replicas: {{ .Values.backend.replicas }}
+  {{- end }}
+  strategy:
+    {{- include "cloudpoc.strategy" . | nindent 4 }}
   selector:
     matchLabels:
       {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 6 }}
@@ -44,6 +50,8 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 10
+          lifecycle:
+            {{- include "cloudpoc.lifecycle" . | nindent 12 }}
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           securityContext:

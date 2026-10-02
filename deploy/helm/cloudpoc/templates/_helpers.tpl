@@ -76,3 +76,25 @@ Env-Variablen des Backends, gemeinsam für Deployment und Migrations-Job
       key: DATABASE_URL
 {{- end }}
 {{- end -}}
+
+{{/* Rollout-Strategie der Deployments (Erklärung in values.yaml) */}}
+{{- define "cloudpoc.strategy" -}}
+{{- if eq .Values.strategy "RollingUpdate" -}}
+type: RollingUpdate
+rollingUpdate:
+  # Erst einen zusätzlichen Pod starten, alte nur beenden, wenn Ersatz bereit ist
+  maxSurge: 1
+  maxUnavailable: 0
+{{- else if eq .Values.strategy "Recreate" -}}
+type: Recreate
+{{- else -}}
+{{- fail (printf "strategy muss RollingUpdate oder Recreate sein, nicht %q" .Values.strategy) -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Vor dem Beenden kurz warten, bis Traefik den Pod aus dem Routing genommen hat */}}
+{{- define "cloudpoc.lifecycle" -}}
+preStop:
+  sleep:
+    seconds: {{ .Values.preStopSleepSeconds }}
+{{- end -}}

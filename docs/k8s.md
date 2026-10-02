@@ -472,3 +472,111 @@ curl -s http://192.168.122.51/api/tickets         # {"items":[],…}, ohne kubec
 Bei jedem weiteren `helm upgrade` läuft der Job zuerst. Gibt es nichts zu migrieren, meldet er das
 und ist nach Sekunden fertig. Der Job des vorigen Deploys bleibt
 bis zum nächsten stehen (`hook-delete-policy: before-hook-creation`), damit seine Logs lesbar bleiben.
+
+## 8. Rolling Update ohne Downtime
+
+### Was beim Update passiert
+
+Mit 2 Replikas, Image-Tag A → B (`strategy: RollingUpdate`, Standard):
+
+```
+1. pre-upgrade:  Migrations-Job B läuft     Pods: A A        ← A läuft gegen Schema B
+2. Rollout:      neuer Pod B startet        Pods: A A B      (B noch nicht ready)
+3.               B ist ready                Pods: A A B      → B bekommt Traffic
+4.               ein A wird beendet         Pods: A B
+5.               dasselbe für das zweite A  Pods: A B B → B B
+```
+
+- **Readiness:** Ein neuer Pod bekommt erst Traffic, wenn `/readyz` grün ist.
+- **`maxSurge: 1`, `maxUnavailable: 0`:** Kubernetes startet erst einen zusätzlichen Pod und
+  beendet einen alten erst, wenn Ersatz bereit ist. Es fehlt also nie ein Pod.
+- **`preStop`-Pause (5 s):** Beim Beenden bekommt der Pod `SIGTERM`, FrankenPHP und nginx
+  beantworten laufende Requests noch zu Ende. Traefik erfährt aber erst kurz danach, dass der Pod
+  wegfällt, und schickt ihm sonst noch neue Requests (502). Die Pause davor überbrückt das.
+
+### Migrationen: expand/contract
+
+Während des Updates läuft **alter Code gegen das neue Schema** (ab Schritt 1), und **beide
+Versionen laufen gleichzeitig** (Schritte 2–5). Jede Migration muss deshalb zur direkt vorherigen
+Code-Version passen. Doctrine fragt immer genau die Spalten ab, die die Entity kennt:
+
+| Änderung                                  | Alter Code                              | Unbedenklich? |
+|-------------------------------------------|-----------------------------------------|---------------|
+| Neue Tabelle                              | kennt sie nicht, stört nicht            | ja            |
+| Neue Spalte, nullable oder mit Default    | ignoriert sie, `INSERT` geht weiter     | ja            |
+| Neue Spalte `NOT NULL` ohne Default       | `INSERT` ohne die Spalte scheitert      | nein          |
+| Spalte umbenennen oder löschen            | `SELECT` der alten Spalte scheitert     | nein          |
+| Index anlegen                             | merkt nichts (kann Tabelle kurz sperren) | meist         |
+
+Gefährliche Änderungen über **zwei Releases** verteilen, z. B. `assignee` → `assigned_to`:
+
+1. **Expand:** Migration legt `assigned_to` zusätzlich an und kopiert die Daten. Der Code
+   schreibt beide Spalten und liest die neue. Alter Code nutzt weiter `assignee`, die es noch gibt.
+2. **Contract:** Der Code nutzt nur noch `assigned_to`, die Migration löscht `assignee`.
+   Der alte Code ist jetzt Release 1, und der braucht `assignee` nicht mehr.
+
+### Alternative: Recreate (kurz offline)
+
+Mit `--set strategy=Recreate` beendet Kubernetes beim Update **erst alle alten Pods** und startet
+dann die neuen. Es laufen nie zwei Versionen gleichzeitig, dafür ist die App ein paar Sekunden
+weg (Traefik antwortet mit einem Fehler). Für viele interne Anwendungen ist das völlig in
+Ordnung und spart die Disziplin von expand/contract bei jeder Migration.
+
+Einschränkung: Der Migrations-Job läuft auch dann **vor** dem Beenden der alten Pods
+(`pre-upgrade`), die alten Pods sehen das neue Schema also noch für die Dauer der Migration.
+Soll das bei einer heiklen Migration gar nicht vorkommen, das Backend vorher von Hand stoppen:
+
+```bash
+kubectl scale deployment cloudpoc-backend -n staging --replicas=0
+helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reuse-values \
+  --set image.tag=<SHA> --set strategy=Recreate --wait
+```
+
+`helm upgrade` setzt `replicas` danach wieder auf den Wert aus den values.
+
+### Prod-Werte
+
+`values-prod.yaml` überschreibt nur, was in Prod anders ist: 2 Frontend-Pods, Backend per
+**HorizontalPodAutoscaler** (2–4 Pods nach CPU-Last, Grundlage ist der metrics-server),
+**PodDisruptionBudgets** und kein Banner. Ein PDB hält bei geplanten Störungen (Node-Wartung,
+`kubectl drain`) mindestens einen Pod am Leben; mit dem Rolling Update selbst hat er nichts zu
+tun. Mit HPA fehlt `replicas` im Deployment, sonst setzte jedes `helm upgrade` die Anzahl zurück.
+
+### Test: Update unter Last
+
+Probehalber mit den Prod-Werten in `staging`:
+
+```bash
+helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reuse-values \
+  -f deploy/helm/cloudpoc/values-prod.yaml --wait
+kubectl get pods,pdb,hpa -n staging              # je 2 Frontend- und Backend-Pods
+```
+
+In einem zweiten Terminal Requests im Dauerlauf, jeder Statuscode eine Zeile:
+
+```bash
+while true; do curl -s -o /dev/null -w '%{http_code}\n' http://192.168.122.51/api/tickets; sleep 0.1; done \
+  | tee ~/rollout-codes.txt
+```
+
+Im ersten Terminal ein Update auslösen. `rollout restart` tauscht alle Pods aus wie bei einem
+neuen Image, ohne dass es eines braucht:
+
+```bash
+kubectl rollout restart deployment -n staging
+kubectl rollout status deployment/cloudpoc-backend -n staging
+kubectl get pods -n staging -w                   # alte gehen erst, wenn neue ready sind (Strg+C)
+```
+
+Dann die Schleife mit Strg+C beenden und auswerten:
+
+```bash
+sort ~/rollout-codes.txt | uniq -c               # nur 200
+```
+
+**Gegenprobe** (zeigt, wofür die Einstellungen da sind): dasselbe mit
+`--set preStopSleepSeconds=0` (vereinzelt 502) oder `--set strategy=Recreate` (eine Lücke mit
+Fehlern). Danach mit `--set preStopSleepSeconds=5 --set strategy=RollingUpdate` zurück.
+
+Zurück auf die Staging-Werte: `helm upgrade` ohne `-f values-prod.yaml` und ohne `--reuse-values`,
+nur mit `--set image.tag=…`.

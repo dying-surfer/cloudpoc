@@ -32,6 +32,9 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Eingabe-DTOs nehmen Enums und Daten als **String** an und prüfen sie mit Constraints (`Choice`, `Date`);
     so meldet die API alle Fehler auf einmal. Umwandlung erst danach (`statusEnum()` usw.).
   - Checks: `make test` bzw. `cd backend && composer check` (cs, phpstan, phpunit gegen `app_test`).
+  - Migrationen **expand/contract**: Jede Migration muss zur vorherigen Code-Version passen (Rolling Update,
+    alter Code läuft kurz gegen das neue Schema). Kein Umbenennen/Löschen von Spalten und kein `NOT NULL` ohne
+    Default in einem Schritt; Regeln und Beispiel in `docs/k8s.md` (Abschnitt 8).
   - Factories, Stories, Fixtures liegen in `backend/fixtures/` (Namespace `App\Fixtures`, nur `autoload-dev`,
     Services nur in dev/test), damit ein `--no-dev`-Build sie nicht enthält. Nicht nach `src/` legen.
   - Demo-Daten: `make backend-fixtures`. Dev-Server: siehe `docs/dev.md` (Backend starten).

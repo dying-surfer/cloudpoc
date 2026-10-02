@@ -11,8 +11,25 @@ image:
   # kubernetes.io/dockerconfigjson im selben Namespace (Anlage: docs/k8s.md)
   pullSecret: ghcr-pull
 
+# Rollout-Strategie beider Deployments (docs/k8s.md, Abschnitt 8):
+# - RollingUpdate: neue Pods starten, bevor alte gehen. Keine Downtime, aber alte und
+#   neue Version laufen kurz gleichzeitig (Migrationen nach expand/contract).
+# - Recreate: erst alle alten Pods beenden, dann die neuen starten. Kurz offline,
+#   dafür nie zwei Versionen gleichzeitig.
+strategy: RollingUpdate
+
+# Pause vor dem Beenden eines Pods: Traefik erfährt erst mit kurzer Verzögerung, dass
+# ein Pod wegfällt, und schickt ihm sonst noch Requests (502 beim Rollout)
+preStopSleepSeconds: 5
+
 frontend:
   replicas: 1
+  # PodDisruptionBudget: Bei geplanten Störungen (Node-Wartung, kubectl drain) bleiben
+  # mindestens so viele Pods stehen. Nur mit replicas >= 2 sinnvoll, sonst blockiert
+  # er die Wartung ganz.
+  pdb:
+    enabled: false
+    minAvailable: 1
   # Wird als /config.json ausgeliefert (Runtime-Config der Angular-App)
   config:
     environment: staging
@@ -33,6 +50,16 @@ ingress:
 
 backend:
   replicas: 1
+  pdb:
+    enabled: false
+    minAvailable: 1
+  # HorizontalPodAutoscaler: Anzahl der Pods nach CPU-Last (gemessen vom metrics-server,
+  # in Prozent der CPU-requests). Ersetzt replicas.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
   # Secret im Namespace mit dem Schlüssel APP_SECRET (Anlage: docs/k8s.md)
   existingSecret: cloudpoc-backend
   resources:
