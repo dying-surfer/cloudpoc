@@ -35,4 +35,15 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Factories, Stories, Fixtures liegen in `backend/fixtures/` (Namespace `App\Fixtures`, nur `autoload-dev`,
     Services nur in dev/test), damit ein `--no-dev`-Build sie nicht enthält. Nicht nach `src/` legen.
   - Demo-Daten: `make backend-fixtures`. Dev-Server: siehe `docs/dev.md` (Backend starten).
-- **M3** (Frontend): als Nächstes, noch nicht begonnen. Plan vorher mit dem User abstimmen.
+- **M3** (Frontend): fertig, in `main` gemergt. Konventionen im Frontend:
+  - Angular 22, Standalone, zoneless, Signals; Angular Material (M3) mit Nord-Farben
+    (`src/_theme-colors.scss` per Schematic erzeugt, Flächen/Text per `mat.theme-overrides` in `styles.scss`).
+  - API-Typen in `tickets/ticket.model.ts` spiegeln die Backend-DTOs von Hand; bei DTO-Änderungen nachziehen.
+  - Listen-Zustand (Filter, Sortierung, Seite) nur in den Query-Params → Signal-Inputs → `rxResource`.
+  - Formulare als Signal Forms (`@angular/forms/signals`, `[formField]`), Server-Violations aus `submit()` zurückgeben.
+  - API-Fehler zeigt `problemDetailsInterceptor` als Snackbar, außer 422 mit Violations (gehören ans Formular).
+  - UI-Texte auf Deutsch, Code-Kommentare auf Deutsch wie im Bestand.
+  - Checks: `cd frontend && npm run check` (prettier, eslint, vitest, build). In Komponententests mit
+    `HttpTestingController` vor `expectOne()` nicht `whenStable()` aufrufen (wartet auf den Request).
+- **M4** (Prod-Images & Compose-Stack): als Nächstes. Images bauen geht nur auf dem Host (kein Podman im
+  Container), dafür vorher eine Lösung mit dem User besprechen.
