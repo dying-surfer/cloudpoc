@@ -38,7 +38,7 @@ ssh admin@192.168.122.x
 Aus dem offiziellen Docker-Repo (Debians eigenes `docker.io` ist älter und hat kein Compose v2):
 
 ```bash
-sudo apt-get update && sudo apt-get install -y ca-certificates curl git make
+sudo apt-get update && sudo apt-get install -y ca-certificates curl git make libicu76
 sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
@@ -52,6 +52,7 @@ docker compose version             # Compose v2
 ```
 
 `git` und `make` braucht der Runner: Er checkt das Repo aus und ruft die `make`-Targets auf.
+`libicu76` braucht der Runner selbst (er ist ein .NET-Programm), ohne sie bricht `config.sh` ab.
 
 ## 3. User für den Runner
 
@@ -138,6 +139,9 @@ Stolpersteine:
 
 - **`svc.sh` fehlt:** `config.sh` ist nicht (erfolgreich) gelaufen. Als `runner` erneut ausführen
   (Schritt c), ggf. mit neuem Token, wenn die Stunde um ist.
+- **„Libicu's dependencies is missing for Dotnet Core“:** `libicu76` fehlt (siehe Abschnitt 2).
+  Als `admin` `sudo apt-get install -y libicu76`, dann Schritt c) wiederholen. Das vorgeschlagene
+  `./bin/installdependencies.sh` geht auch, braucht aber root, und `runner` hat kein `sudo`.
 - **`config.sh` meldet „Must not run with sudo“ oder Permission denied:** falscher User,
   siehe Schritt a).
 - **„A runner exists with the same name“:** Runner unter *Settings → Actions → Runners* löschen
