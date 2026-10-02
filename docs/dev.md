@@ -56,9 +56,12 @@ maschinenspezifische Einstellungen sind:
 ```json
 {
   "dev.containers.dockerPath": "podman",
-  "dev.containers.dockerComposePath": "docker-compose"
+  "dev.containers.dockerComposePath": "/home/linuxbrew/.linuxbrew/bin/docker-compose"
 }
 ```
+
+`docker-compose` mit vollem Pfad: Aus dem Dock gestartet erbt VS Code den PATH von systemd, und darin
+fehlt Homebrew (das trägt nur `/etc/profile.d/brew.sh` in Login-Shells ein), siehe *Fehlersuche*.
 
 ## Starten
 
@@ -195,4 +198,5 @@ installiert. Im VS-Code-Terminal des Containers `claude` starten und beim ersten
 | Prod-Build mit `php -S` getestet: `/readyz` meldet die DB als „unavailable“, obwohl `DATABASE_URL` gesetzt ist | `composer dump-env prod` schreibt die `.env`-Werte (mit `!ChangeMe!`) nach `.env.local.php`. Echte Env-Vars haben nur Vorrang, wenn PHP sie in `$_SERVER`/`$_ENV` ablegt. `php -S` tut das mit `variables_order=GPCS` nicht, FrankenPHP im Prod-Image schon. Für `php -S`: `-d variables_order=EGPCS` |
 | `curl localhost:<port>` auf einen Container: „Recv failure: Verbindung zurückgesetzt“, mit `127.0.0.1` geht es | `localhost` wird zu `::1` (IPv6) aufgelöst, und rootless Podman (pasta) reicht IPv6 als IPv6 in den Container weiter. Der Dienst darin lauscht nur auf IPv4. Bei nginx zusätzlich `listen [::]:8080;` (siehe `frontend/docker/nginx.conf`) |
 | `podman compose …`: „failed to connect to the docker API at unix:///run/user/1000/podman/podman.sock … no such file or directory“ | Die Socket-Datei fehlt, obwohl `podman.socket` aktiviert ist (Ursache unklar, trat in M4 einmal auf). `systemctl --user restart podman.socket` legt sie neu an. Zum Nachsehen: `systemctl --user status podman.socket`, `journalctl --user -u podman.socket -n 20` |
+| VS Code: „spawn docker-compose ENOENT“ beim Öffnen des Devcontainers; `podman compose`: „looking up compose provider failed“ | Homebrew fehlt im PATH. VS Code aus dem Dock bekommt den PATH von systemd (`systemctl --user show-environment`), ohne `/home/linuxbrew/.linuxbrew/bin`. Fiel erst nach `make dev-down` auf: Existiert der Container schon, startet VS Code ihn per `podman`, nur zum Neuanlegen braucht es Compose. Lösung: `dockerComposePath` mit vollem Pfad (siehe *VS-Code-Einstellungen*). Die `make`-Targets deshalb im normalen Terminal ausführen (ein `make stack-down` scheiterte in M4 vermutlich im Terminal eines aus dem Dock gestarteten VS Code) |
 | Stack: Proxy startet nicht, „port 8000 already in use“ | 8000 ist der Port des Dev-Backends, VS Code leitet ihn aus dem Devcontainer an den Host weiter. Der Stack nutzt deshalb 8088 (`HTTP_PORT` in `deploy/compose/.env`). Wer den Port belegt: `ss -ltnp \| grep :8000` |
