@@ -74,10 +74,13 @@ frontend-check: ## Frontend: Prettier, ESLint, Vitest, Produktions-Build
 
 TAG ?= local
 
-.PHONY: backend-image
+.PHONY: backend-image frontend-image
 
 backend-image: ## Prod-Image des Backends bauen (cloudpoc-backend:$(TAG))
 	podman build -t cloudpoc-backend:$(TAG) backend
+
+frontend-image: ## Prod-Image des Frontends bauen (cloudpoc-frontend:$(TAG))
+	podman build -t cloudpoc-frontend:$(TAG) frontend
 
 # --- Alles ---------------------------------------------------------------------
 

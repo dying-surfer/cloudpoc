@@ -50,3 +50,5 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   (kein Podman-Socket im Devcontainer, damit Claude weiterhin nur das Repo sieht). Vorher so viel wie
   möglich ohne Podman prüfen (z. B. Build-Schritte in einer Kopie im Scratchpad nachspielen).
   - Backend-Image: `backend/Dockerfile` (FrankenPHP, Multi-Stage, User `app`, Port 8080), `make backend-image`.
+  - Frontend-Image: `frontend/Dockerfile` (Node-Build → nginx-unprivileged, Port 8080), `make frontend-image`.
+    `config.json` ist nicht im Image, sie wird pro Umgebung nach `/usr/share/nginx/html/config.json` gemountet.
