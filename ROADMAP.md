@@ -127,6 +127,7 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 - [ ] Deploy-Workflows um einen Helm-Pfad erweitern
 
 **Fertig, wenn:** Ein Rolling Update ohne Downtime läuft und die CNPG-Recovery in einen neuen Namespace funktioniert.
+Stand: Beim ersten Rolling-Update-Test gab es noch eine 502 und eine 504 (docs/k8s.md, Abschnitt 8).
 
 ### M8 – Azure
 - [ ] Terraform `infra/azure`: RG, AKS, Postgres Flexible Server (Staging B1ms, Prod HA),

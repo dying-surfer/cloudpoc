@@ -580,6 +580,11 @@ Dann die Schleife mit Strg+C beenden und auswerten:
 sort ~/rollout-codes.txt | uniq -c               # nur 200
 ```
 
+**Stand Oktober 2026: noch offen.** Der erste Test mit 2 Replikas ergab 32 × 200, 1 × 502 und
+1 × 504 (rund 30 s Wartezeit). Verdacht: Traefik schickt noch Requests an Pods, die schon
+beendet werden. Die Access-Logs unten sind eingeschaltet, um das zu belegen; ausgewertet ist es
+noch nicht.
+
 **Gegenprobe** (zeigt, wofür die Einstellungen da sind): dasselbe mit
 `--set preStopSleepSeconds=0` (vereinzelt 502) oder `--set strategy=Recreate` (eine Lücke mit
 Fehlern). Danach mit `--set preStopSleepSeconds=5 --set strategy=RollingUpdate` zurück.
