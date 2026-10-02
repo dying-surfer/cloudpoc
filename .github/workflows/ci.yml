@@ -158,3 +158,44 @@ jobs:
           # Die Pakete in GHCR sind privat; Trivy meldet sich mit dem Job-Token an
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+  smoke:
+    name: Smoke-Test (Stack + Playwright)
+    # Läuft gegen genau die Images, die der images-Job eben gepusht hat
+    needs: images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    # Dieselben make-Targets wie auf dem Host, nur mit docker statt podman
+    env:
+      CONTAINER: docker
+      BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-backend:${{ github.sha }}
+      FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-frontend:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Wegwerf-Secrets nur für diesen Lauf; der Runner ist danach weg
+      - name: .env für den Stack
+        working-directory: deploy/compose
+        run: |
+          echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" > .env
+          echo "APP_SECRET=$(openssl rand -hex 32)" >> .env
+      # `up -d` kehrt erst zurück, wenn frontend und backend healthy sind
+      # (depends_on des Proxys), danach steht der Stack
+      - run: make stack-up
+      - run: make stack-smoke
+      - name: Logs des Stacks
+        if: failure()
+        run: make stack-ps && docker compose -f deploy/compose/compose.yaml logs --no-color
+      - name: Playwright-Bericht hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7

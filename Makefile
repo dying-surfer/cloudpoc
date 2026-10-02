@@ -69,23 +69,25 @@ frontend-install: ## npm-Abhängigkeiten des Frontends installieren (exakt nach 
 frontend-check: ## Frontend: Prettier, ESLint, Vitest, Produktions-Build
 	@$(FRONTEND) npm run check
 
-# --- Prod-Images (nur auf dem Host, braucht podman) ---------------------------
+# --- Prod-Images (auf dem Host mit podman, in CI mit docker) ------------------
 # Lokal heißt der Tag "local"; in CI später der Git-SHA (make backend-image TAG=…).
+# CONTAINER wählt das Werkzeug: lokal podman, in CI (GitHub-Runner) docker.
 
-TAG ?= local
+TAG       ?= local
+CONTAINER ?= podman
 
 .PHONY: backend-image frontend-image
 
 backend-image: ## Prod-Image des Backends bauen (Tag per TAG=…, Standard: local)
-	podman build -t cloudpoc-backend:$(TAG) backend
+	$(CONTAINER) build -t cloudpoc-backend:$(TAG) backend
 
 frontend-image: ## Prod-Image des Frontends bauen (Tag per TAG=…, Standard: local)
-	podman build -t cloudpoc-frontend:$(TAG) frontend
+	$(CONTAINER) build -t cloudpoc-frontend:$(TAG) frontend
 
-# --- Prod-naher Stack (nur auf dem Host) -----------------------------------------
+# --- Prod-naher Stack (auf dem Host, in CI mit CONTAINER=docker) -----------------
 # Nutzt die lokal gebauten Images; Secrets kommen aus deploy/compose/.env.
 
-STACK = podman compose -f deploy/compose/compose.yaml
+STACK = $(CONTAINER) compose -f deploy/compose/compose.yaml
 
 .PHONY: images stack-up stack-ps stack-logs stack-down stack-destroy
 
@@ -124,7 +126,7 @@ endif
 .PHONY: stack-smoke e2e-install e2e-check
 
 stack-smoke: ## Playwright-Smoke-Tests gegen den laufenden Stack (Bericht: e2e/playwright-report/)
-	podman run --rm --init --ipc=host --network cloudpoc_default \
+	$(CONTAINER) run --rm --init --ipc=host --network cloudpoc_default \
 		-v $(CURDIR)/e2e:/e2e:z -w /e2e -e BASE_URL=http://proxy:8080 -e CI=1 \
 		$(PLAYWRIGHT_IMAGE) sh -c 'npm ci --no-audit --no-fund && npx playwright test'
 
