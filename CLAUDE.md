@@ -57,7 +57,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     jede Spalte ein und bricht bei unbekannten ab: Neue Spalten dort eintragen.
   - Stack: `deploy/compose/` (proxy = nginx, frontend, backend, migrate als One-Shot, db mit Volume), Port 8088,
     Secrets in `deploy/compose/.env` (nicht im Repo, Vorlage `.env.example`). `make images`, `make stack-up` usw.
-    Reverse Proxy: nginx (Kriterium des Users: production-ready und verbreitet); Edge-Proxy in M6 voraussichtlich Traefik.
+    Reverse Proxy: nginx (Kriterium des Users: production-ready und verbreitet); Edge-Proxy mit TLS voraussichtlich Traefik (M9).
   - Smoke-Tests: `e2e/` (Playwright, nur Zusammenspiel prüfen). `make stack-smoke` (Host) läuft im Playwright-Image
     im Compose-Netz gegen `http://proxy:8080`; `make e2e-check` statisch, Teil von `make test`. Im Devcontainer
     startet Chromium nicht (Systembibliotheken fehlen). `@playwright/test` exakt pinnen, der Image-Tag folgt daraus.
