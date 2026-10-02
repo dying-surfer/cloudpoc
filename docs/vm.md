@@ -88,27 +88,60 @@ leeren Volumes an. Später geändert, passt es nicht mehr zur DB.
 ## 5. Runner registrieren
 
 Auf GitHub: Repo → *Settings → Actions → Runners → New self-hosted runner*, Linux, x64.
-Die Seite zeigt Download-Befehle und einen Token (gilt eine Stunde). Als `runner` ausführen:
+Die Seite zeigt zwei Blöcke: *Download* (Version und Prüfsumme ändern sich mit jedem Release, darum
+stehen sie hier nicht) und *Configure* mit einem Token, der eine Stunde gilt.
+
+**a) Als `runner` anmelden.** Alles bis Schritt c) läuft als `runner`, nicht als `admin`, sonst
+gehören die Dateien dem falschen User:
 
 ```bash
 sudo -iu runner
-mkdir actions-runner && cd actions-runner
-# Download- und Prüfsummen-Befehle von der GitHub-Seite hier einfügen (curl … && tar xzf …)
-./config.sh --url https://github.com/dying-surfer/cloudpoc --token <TOKEN> \
-  --name cloudpoc-vm --labels vm --unattended
-exit
+whoami                                  # muss "runner" sagen, Prompt: runner@debian
+mkdir -p ~/actions-runner && cd ~/actions-runner
 ```
 
-Als systemd-Dienst einrichten, damit er nach einem Neustart der VM wieder läuft (als `admin`):
+**b) Herunterladen.** Aus dem Block *Download* nur die drei Zeilen ab `curl -o actions-runner-…`
+kopieren (`curl`, `echo "<prüfsumme>  …" | shasum -a 256 -c`, `tar xzf …`); `mkdir`/`cd` sind
+schon erledigt. Fehlt `shasum`, statt dessen `sha256sum -c` nehmen, die Eingabe ist dieselbe.
+Danach liegen u. a. `config.sh`, `run.sh` und `bin/` im Verzeichnis, aber noch **kein** `svc.sh`.
+
+**c) Registrieren.** Den Befehl aus *Configure* **nicht** übernehmen, sondern diesen mit dem Token
+von dort (setzt Name und Label ohne Rückfragen):
 
 ```bash
-cd /home/runner/actions-runner
-sudo ./svc.sh install runner
-sudo ./svc.sh start
-sudo ./svc.sh status
+./config.sh --url https://github.com/dying-surfer/cloudpoc --token <TOKEN> \
+  --name cloudpoc-vm --labels vm --unattended
+```
+
+Erfolgreich, wenn die Ausgabe mit `√ Settings Saved.` endet. Erst jetzt entsteht `svc.sh`:
+
+```bash
+ls svc.sh .runner .credentials          # alle drei müssen da sein
+rm actions-runner-linux-x64-*.tar.gz    # Archiv wird nicht mehr gebraucht
+exit                                    # zurück zu admin
+```
+
+`./run.sh` **nicht** starten: Das wäre der Runner im Vordergrund, wir richten ihn als Dienst ein.
+
+**d) Als systemd-Dienst einrichten** (als `admin`), damit er nach einem Neustart der VM wieder läuft.
+`svc.sh` braucht root und muss im Runner-Verzeichnis aufgerufen werden; `runner` am Ende ist der
+User, unter dem der Dienst läuft:
+
+```bash
+sudo bash -c 'cd /home/runner/actions-runner && ./svc.sh install runner && ./svc.sh start'
+sudo systemctl status 'actions.runner.*'     # active (running)
 ```
 
 Auf GitHub erscheint der Runner danach als *Idle* mit den Labels `self-hosted`, `Linux`, `X64`, `vm`.
+
+Stolpersteine:
+
+- **`svc.sh` fehlt:** `config.sh` ist nicht (erfolgreich) gelaufen. Als `runner` erneut ausführen
+  (Schritt c), ggf. mit neuem Token, wenn die Stunde um ist.
+- **`config.sh` meldet „Must not run with sudo“ oder Permission denied:** falscher User,
+  siehe Schritt a).
+- **„A runner exists with the same name“:** Runner unter *Settings → Actions → Runners* löschen
+  oder `--replace` an `config.sh` anhängen.
 
 ### Absicherung (öffentliches Repo)
 
