@@ -86,10 +86,12 @@ frontend-image: ## Prod-Image des Frontends bauen (Tag per TAG=…, Standard: lo
 
 # --- Prod-naher Stack (auf dem Host, in CI mit CONTAINER=docker) -----------------
 # Nutzt die lokal gebauten Images; Secrets kommen aus deploy/compose/.env.
+# Auf der VM liegt die .env außerhalb des Checkouts: ENV_FILE=/srv/cloudpoc/.env
 
-STACK = $(CONTAINER) compose -f deploy/compose/compose.yaml
+ENV_FILE ?=
+STACK = $(CONTAINER) compose -f deploy/compose/compose.yaml $(if $(ENV_FILE),--env-file $(ENV_FILE))
 
-.PHONY: images stack-up stack-ps stack-logs stack-down stack-destroy
+.PHONY: images stack-up stack-ps stack-logs stack-down stack-destroy deploy
 
 images: backend-image frontend-image ## Beide Prod-Images bauen
 
@@ -107,6 +109,13 @@ stack-down: ## Stack stoppen und entfernen, die Daten (Volume) bleiben
 
 stack-destroy: ## Stack samt DB-Volume entfernen (alle Daten weg!)
 	$(STACK) down -v
+
+# Vom Deploy-Workflow auf der VM aufgerufen, Images per BACKEND_IMAGE/FRONTEND_IMAGE.
+# `up -d` kehrt erst zurück, wenn migrate durch ist und backend/frontend healthy sind
+# (depends_on mit condition), denn erst dann startet der proxy.
+deploy: ## Images aus der Registry holen und Stack damit neu starten (VM)
+	$(STACK) pull --quiet
+	$(STACK) up -d --remove-orphans
 
 # --- Smoke-Tests (Playwright, Ordner e2e/) ---------------------------------------
 # stack-smoke läuft im offiziellen Playwright-Image: Browser und Systembibliotheken
