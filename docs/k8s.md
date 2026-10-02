@@ -35,11 +35,22 @@ Wie in [vm.md](vm.md#1-vm-anlegen) mit virt-manager, mit etwas mehr Platz:
 
 - Image: Debian 13 „trixie“, netinst-ISO
 - Name `k3s`, **2 vCPU, 4 GB RAM, 30 GB Disk** (Images und DB-Volume liegen auf der VM-Disk)
-- Bei der Installation: kein Desktop, nur „SSH server“ und „Standard-Systemwerkzeuge“, User `admin`
+- Bei der Installation: kein Desktop, nur „SSH server“ und „Standard-Systemwerkzeuge“. Einen
+  normalen User anlegen, im Folgenden `admin` (Platzhalter für deinen Usernamen)
 
-**Swap ausschalten.** Kubernetes plant Pods anhand ihres RAM-Bedarfs ein und erwartet, dass
-dieser RAM wirklich vorhanden ist. Mit Swap würde ein Knoten unter Last unbemerkt auslagern statt
-Pods zu verdrängen. Debians Installer legt standardmäßig eine Swap-Partition an:
+### Swap ausschalten
+
+**Nötig ist das bei k3s nicht.** Das klassische Kubernetes (kubeadm) startet mit Swap gar nicht
+erst: Der kubelet bricht ab (`failSwapOn`). k3s schaltet diese Prüfung ab und läuft auch mit Swap.
+Seit Kubernetes 1.28 kann der kubelet mit Swap umgehen, und standardmäßig (`swapBehavior: NoSwap`)
+lagern die Pods selbst nicht aus, nur die übrigen Prozesse der VM.
+
+**Wir schalten ihn trotzdem ab**, damit sich der Node verhält wie die Nodes in AKS (M8), die keinen
+Swap haben. Kubernetes plant Pods anhand ihres RAM-Bedarfs ein (`requests`, `limits`). Reicht der
+RAM nicht, verdrängt der kubelet Pods oder der Kernel beendet einen Container (OOMKilled). Das ist
+gewollt, denn es ist sichtbar: Der Pod startet neu, `kubectl describe` zeigt den Grund. Mit Swap
+würde die VM stattdessen langsam auslagern, und das sieht man schlechter. Debians Installer legt
+standardmäßig eine Swap-Partition an:
 
 ```bash
 sudo swapoff -a
@@ -47,8 +58,37 @@ sudo sed -i '/\sswap\s/ s/^/#/' /etc/fstab   # beim nächsten Boot nicht wieder 
 free -h                                      # Swap: 0B
 ```
 
-IP herausfinden (`ip -4 addr`) und vom Host aus `ssh admin@192.168.122.y` testen. Im Folgenden
-steht `192.168.122.y` für die IP dieser VM.
+### Feste IP: 192.168.122.51
+
+Die VM bekommt ihre IP per DHCP aus dem libvirt-Netz `default`. Ändert sie sich, zeigt die
+kubeconfig ins Leere. Statt die IP in der VM statisch einzutragen, reservieren wir sie im
+DHCP-Server von libvirt (dnsmasq) für die MAC-Adresse der VM. So bleibt die VM selbst
+unverändert, und die Zuordnung steht an einer Stelle auf dem Host.
+
+Auf dem Host:
+
+```bash
+export LIBVIRT_DEFAULT_URI=qemu:///system
+virsh net-dhcp-leases default            # .51 darf nicht an eine andere VM vergeben sein
+virsh domiflist k3s                      # MAC-Adresse, z. B. 52:54:00:ab:cd:ef
+
+# Reservierung eintragen: --live wirkt sofort, --config bleibt nach Neustart des Netzes
+virsh net-update default add ip-dhcp-host \
+  "<host mac='52:54:00:ab:cd:ef' name='k3s' ip='192.168.122.51'/>" --live --config
+virsh net-dumpxml default                # unter <dhcp> steht jetzt die host-Zeile
+
+virsh reboot k3s                         # holt sich beim Booten die neue Adresse
+```
+
+Danach vom Host aus:
+
+```bash
+ssh admin@192.168.122.51
+ip -4 addr                               # in der VM: 192.168.122.51
+```
+
+Ändern oder entfernen geht mit `virsh net-update default modify …` bzw. `delete …` und derselben
+`<host …/>`-Zeile.
 
 ## 2. k3s installieren
 
@@ -75,7 +115,7 @@ das Chart mindestens unterstützen muss.
 Traefik antwortet schon auf Port 80, hat aber noch keine Routen. Vom Host aus:
 
 ```bash
-curl -i http://192.168.122.y/      # HTTP/1.1 404 Not Found, "404 page not found" von Traefik
+curl -i http://192.168.122.51/      # HTTP/1.1 404 Not Found, "404 page not found" von Traefik
 ```
 
 ## 3. Zugriff vom Host
@@ -84,10 +124,10 @@ curl -i http://192.168.122.y/      # HTTP/1.1 404 Not Found, "404 page not found
 Zugangsdaten. k3s schreibt eine nach `/etc/rancher/k3s/k3s.yaml`. Deren Zugangsdaten sind
 **cluster-admin**, also volle Rechte auf den Cluster: Datei wie ein Passwort behandeln.
 
-In der VM eine Kopie für `admin` lesbar machen:
+In der VM eine Kopie für deinen User lesbar machen:
 
 ```bash
-sudo install -m 600 -o admin -g admin /etc/rancher/k3s/k3s.yaml ~/k3s.yaml
+sudo install -m 600 -o "$USER" -g "$USER" /etc/rancher/k3s/k3s.yaml ~/k3s.yaml
 ```
 
 Auf dem Host `kubectl` und `helm` installieren und die Datei holen. Auf Bluefin kommen
@@ -98,13 +138,13 @@ Kommandozeilen-Werkzeuge über Homebrew (nach `/home/linuxbrew`, ohne Neustart),
 command -v kubectl helm || brew install kubectl helm
 
 mkdir -p ~/.kube
-scp admin@192.168.122.y:k3s.yaml ~/.kube/cloudpoc-k3s.yaml
+scp admin@192.168.122.51:k3s.yaml ~/.kube/cloudpoc-k3s.yaml
 chmod 600 ~/.kube/cloudpoc-k3s.yaml
-ssh admin@192.168.122.y rm k3s.yaml
+ssh admin@192.168.122.51 rm k3s.yaml
 
 # Die Datei zeigt auf 127.0.0.1 (aus Sicht der VM), vom Host aus ist es die VM-IP.
 # Das Zertifikat der API gilt auch für die IP der VM, k3s trägt sie selbst ein.
-sed -i 's/127.0.0.1/192.168.122.y/' ~/.kube/cloudpoc-k3s.yaml
+sed -i 's/127.0.0.1/192.168.122.51/' ~/.kube/cloudpoc-k3s.yaml
 ```
 
 Die Datei bewusst nicht als `~/.kube/config` ablegen, sondern pro Shell einschalten. So schickt
