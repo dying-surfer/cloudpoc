@@ -96,7 +96,7 @@ Makefile                einheitliche Entry-Points
 - [ ] `ci.yml` für PRs und Pushes: Lint, PHPStan, PHPUnit (Postgres-Service), Angular-Lint/Test/Build,
       Image-Build mit Cache, Trivy-Scan (Job vorhanden, abgeschaltet, siehe M9), Playwright-Smoke
 - [ ] Push der Images nach GHCR (`:sha`, `:main`)
-- [ ] Dependabot/Renovate
+- [x] Dependabot (monatlich, Minor/Patch gebündelt; PRs blockieren nichts)
 
 **Fertig, wenn:** Ein PR grün durchläuft und die Images in GHCR liegen.
 

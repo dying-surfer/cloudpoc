@@ -1,0 +1,39 @@
+# Dependabot öffnet PRs für Updates; gemergt wird nur, was man will.
+# Zurückhaltend eingestellt (PoC): monatlich, Minor/Patch je Ökosystem in einem PR
+# gebündelt, Major-Updates einzeln (die brauchen meist Handarbeit).
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        update-types: [minor, patch]
+
+  - package-ecosystem: composer
+    directory: /backend
+    schedule:
+      interval: monthly
+    groups:
+      composer:
+        update-types: [minor, patch]
+
+  # e2e: @playwright/test ist exakt gepinnt, der Image-Tag im Makefile folgt daraus
+  - package-ecosystem: npm
+    directories: [/frontend, /e2e]
+    schedule:
+      interval: monthly
+    groups:
+      npm:
+        update-types: [minor, patch]
+
+  # Basis-Images in den Dockerfiles (FROM …)
+  - package-ecosystem: docker
+    directories: [/backend, /frontend, /.devcontainer]
+    schedule:
+      interval: monthly
+    groups:
+      docker:
+        update-types: [minor, patch]
