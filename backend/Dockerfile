@@ -47,10 +47,12 @@ FROM base AS prod
 # TLS übernimmt der Reverse Proxy davor. Ports über 1024 brauchen kein root.
 ENV SERVER_NAME=:8080
 
-# Unprivilegierter User. setcap -r entfernt die Datei-Capability zum Binden an
-# Port 80/443: Wir brauchen sie nicht, und unter Kubernetes mit
-# "drop: ALL" würde das Binary mit ihr gar nicht erst starten.
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin app \
+# Unprivilegierter User mit fester UID/GID 10001 (außerhalb der Bereiche normaler
+# User, ändert sich nicht mit dem Basis-Image). setcap -r entfernt die
+# Datei-Capability zum Binden an Port 80/443: Wir brauchen sie nicht, und unter
+# Kubernetes mit "drop: ALL" würde das Binary mit ihr gar nicht erst starten.
+RUN groupadd --system --gid 10001 app \
+    && useradd --system --uid 10001 --gid app --no-create-home --shell /usr/sbin/nologin app \
     && setcap -r /usr/local/bin/frankenphp \
     && chown -R app:app /config/caddy /data/caddy
 
@@ -58,5 +60,7 @@ RUN useradd --system --no-create-home --shell /usr/sbin/nologin app \
 COPY --from=build /app /app
 RUN chown -R app:app /app/var
 
-USER app
+# Als Nummer, nicht als Name: Kubernetes prüft "runAsNonRoot" vor dem Start und
+# kann das nur bei einer numerischen UID (beim Namen weiß es nicht, ob dahinter 0 steckt).
+USER 10001:10001
 EXPOSE 8080
