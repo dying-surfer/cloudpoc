@@ -31,31 +31,122 @@ Ohne weiteres Zutun bringt k3s mit, was ein Cluster sonst einzeln braucht:
 
 ## 1. VM anlegen
 
-Wie in [vm.md](vm.md#1-vm-anlegen) mit virt-manager, mit etwas mehr Platz:
+Diesmal im Terminal statt mit virt-manager, und ohne Installer: Wir starten von Debians fertigem
+**Cloud-Image** (eine schon installierte Debian-Disk) und lassen sie beim ersten Boot von
+**cloud-init** einrichten (Hostname, User, SSH-Key). So ist die VM in einer Minute da und lässt sich
+jederzeit gleich wieder herstellen. Cloud-VMs bei Azure und Co. starten genauso.
 
-- Image: Debian 13 „trixie“, netinst-ISO
-- Name `k3s`, **2 vCPU, 4 GB RAM, 30 GB Disk** (Images und DB-Volume liegen auf der VM-Disk)
-- Bei der Installation: kein Desktop, nur „SSH server“ und „Standard-Systemwerkzeuge“, User `admin`
-
-**Swap ausschalten.** Kubernetes plant Pods anhand ihres RAM-Bedarfs ein und erwartet, dass
-dieser RAM wirklich vorhanden ist. Mit Swap würde ein Knoten unter Last unbemerkt auslagern statt
-Pods zu verdrängen. Debians Installer legt standardmäßig eine Swap-Partition an:
+Alle Befehle auf dem **Host**. `qemu:///system` ist dieselbe libvirt-Verbindung, die virt-manager
+nutzt (ohne die Angabe landen `virsh`/`virt-install` in der User-Session `qemu:///session`, dort
+gibt es das Netz `default` nicht):
 
 ```bash
-sudo swapoff -a
-sudo sed -i '/\sswap\s/ s/^/#/' /etc/fstab   # beim nächsten Boot nicht wieder einhängen
-free -h                                      # Swap: 0B
+export LIBVIRT_DEFAULT_URI=qemu:///system
+command -v virt-install virsh qemu-img      # alle drei vorhanden?
+virsh list --all                            # zeigt u. a. die M6-VM
+virsh net-list                              # Netz "default" aktiv
 ```
 
-IP herausfinden (`ip -4 addr`) und vom Host aus `ssh admin@192.168.122.y` testen. Im Folgenden
-steht `192.168.122.y` für die IP dieser VM.
+**a) SSH-Key.** Die VM bekommt kein Passwort, der Login geht nur per Key:
+
+```bash
+ls ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519
+```
+
+**b) Cloud-Image holen und prüfen.** `genericcloud` ist die Variante für VMs (ohne Treiber für
+echte Hardware):
+
+```bash
+mkdir -p ~/vms/k3s && cd ~/vms/k3s
+base=https://cloud.debian.org/images/cloud/trixie/latest
+curl -fLO $base/debian-13-genericcloud-amd64.qcow2
+curl -fLO $base/SHA512SUMS
+sha512sum --check --ignore-missing SHA512SUMS    # debian-13-genericcloud-amd64.qcow2: OK
+```
+
+**c) Disk der VM anlegen.** Eine Kopie des Images in libvirts Speicherort, vergrößert auf 30 GB
+(Images und DB-Volume liegen dort). Das Dateisystem wächst beim ersten Boot von selbst mit:
+
+```bash
+sudo install -m 644 debian-13-genericcloud-amd64.qcow2 /var/lib/libvirt/images/k3s.qcow2
+sudo qemu-img resize /var/lib/libvirt/images/k3s.qcow2 30G
+```
+
+**d) cloud-init-Konfiguration.** User `admin` mit deinem SSH-Key. `sudo` ohne Passwort, weil der
+User keines hat; Login ist nur per Key möglich, die VM hängt nur im lokalen NAT-Netz:
+
+```bash
+cat > user-data.yaml <<EOT
+#cloud-config
+hostname: k3s
+users:
+  - name: admin
+    groups: [sudo]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - $(cat ~/.ssh/id_ed25519.pub)
+package_update: true
+packages: [curl]
+EOT
+cat user-data.yaml                               # dein Key steht drin?
+```
+
+**e) VM erzeugen und starten.** `--import` = vorhandene Disk booten statt installieren:
+
+```bash
+virt-install \
+  --name k3s --memory 4096 --vcpus 2 \
+  --osinfo debian13 \
+  --import --disk /var/lib/libvirt/images/k3s.qcow2,bus=virtio \
+  --network network=default,model=virtio \
+  --cloud-init user-data=user-data.yaml \
+  --graphics none --noautoconsole
+```
+
+Kennt `virt-install` `debian13` noch nicht (Fehler „Unknown OS name“), stattdessen
+`--osinfo linux2024` nehmen. Das steuert nur Voreinstellungen für virtuelle Hardware.
+
+**f) IP herausfinden und einloggen.** Die VM holt sich per DHCP eine Adresse, das dauert ein paar
+Sekunden:
+
+```bash
+virsh domifaddr k3s                              # ipv4 192.168.122.y/24
+ssh admin@192.168.122.y
+```
+
+In der VM prüfen, ob cloud-init durch ist und alles passt:
+
+```bash
+cloud-init status --wait                         # status: done
+hostname                                         # k3s
+df -h /                                          # ca. 30G
+free -h                                          # Swap: 0B
+```
+
+**Kein Swap** ist hier gewollt: Kubernetes plant Pods anhand ihres RAM-Bedarfs ein und erwartet,
+dass dieser RAM wirklich vorhanden ist. Mit Swap würde ein Knoten unter Last unbemerkt auslagern,
+statt Pods zu verdrängen. Das Cloud-Image hat keinen Swap, anders als eine Installation mit dem
+Debian-Installer (dort `swapoff -a` und die Swap-Zeile in `/etc/fstab` auskommentieren).
+
+Im Folgenden steht `192.168.122.y` für die IP dieser VM.
+
+Nützlich für später (auf dem Host, mit `LIBVIRT_DEFAULT_URI` wie oben):
+
+```bash
+virsh shutdown k3s                               # herunterfahren
+virsh start k3s                                  # starten
+virsh autostart k3s                              # mit dem Host starten (optional)
+virsh console k3s                                # serielle Konsole, falls SSH nicht geht (Strg+] beendet)
+virsh destroy k3s && virsh undefine k3s --remove-all-storage   # VM samt Disk weg
+```
 
 ## 2. k3s installieren
 
 In der VM als `admin`:
 
 ```bash
-sudo apt-get update && sudo apt-get install -y curl
+# curl hat cloud-init schon installiert
 curl -sfL https://get.k3s.io | sh -
 ```
 
