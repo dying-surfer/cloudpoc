@@ -76,10 +76,10 @@ TAG ?= local
 
 .PHONY: backend-image frontend-image
 
-backend-image: ## Prod-Image des Backends bauen (cloudpoc-backend:$(TAG))
+backend-image: ## Prod-Image des Backends bauen (Tag per TAG=…, Standard: local)
 	podman build -t cloudpoc-backend:$(TAG) backend
 
-frontend-image: ## Prod-Image des Frontends bauen (cloudpoc-frontend:$(TAG))
+frontend-image: ## Prod-Image des Frontends bauen (Tag per TAG=…, Standard: local)
 	podman build -t cloudpoc-frontend:$(TAG) frontend
 
 # --- Prod-naher Stack (nur auf dem Host) -----------------------------------------
@@ -105,6 +105,42 @@ stack-down: ## Stack stoppen und entfernen, die Daten (Volume) bleiben
 
 stack-destroy: ## Stack samt DB-Volume entfernen (alle Daten weg!)
 	$(STACK) down -v
+
+# --- Datenbank des Stacks (nur auf dem Host) -------------------------------------
+# Die Befehle laufen per exec im db-Container: Dort passen pg_dump/pg_restore immer
+# zur Server-Version, und die DB braucht keinen veröffentlichten Port.
+# Dumps landen in db/dumps/ (nicht im Repo, können echte Daten enthalten).
+# Gefährliche Targets fragen nach; YES=1 überspringt die Frage (z. B. in Skripten).
+
+DB_EXEC   = $(STACK) exec -T db
+DUMP_DIR  = db/dumps
+STAMP     := $(shell date +%Y%m%d-%H%M%S)
+DUMP_FILE := $(DUMP_DIR)/cloudpoc-$(STAMP).dump
+
+# $(call confirm,Text): fragt nach und bricht ab, wenn nicht mit "j" geantwortet wird
+define confirm
+	@if [ "$(YES)" != 1 ]; then printf '%s Weiter? [j/N] ' "$(1)"; read a; [ "$$a" = j ]; fi
+endef
+
+.PHONY: db-reset db-dump db-import
+
+db-reset: ## Stack-DB leeren und neu migrieren (alle Daten weg!)
+	$(call confirm,Alle Daten in der Stack-DB werden gelöscht.)
+	$(DB_EXEC) psql -U app -d app -v ON_ERROR_STOP=1 -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+	$(STACK) run --rm migrate
+
+db-dump: ## Dump der Stack-DB nach db/dumps/ schreiben
+	@mkdir -p $(DUMP_DIR)
+	@# Erst in eine .tmp-Datei: Bricht pg_dump ab, bleibt kein halber Dump mit gültigem Namen liegen
+	$(DB_EXEC) pg_dump -U app -d app --format=custom > $(DUMP_FILE).tmp
+	@mv $(DUMP_FILE).tmp $(DUMP_FILE) && ls -lh $(DUMP_FILE)
+
+db-import: ## Dump in die Stack-DB einspielen, ersetzt die Daten (FILE=db/dumps/….dump)
+	@test -n "$(FILE)" || { echo "FILE fehlt, z. B.: make db-import FILE=db/dumps/cloudpoc-….dump"; exit 1; }
+	$(call confirm,Die Daten in der Stack-DB werden durch $(FILE) ersetzt.)
+	$(DB_EXEC) pg_restore -U app -d app --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error < $(FILE)
+	@# Der Dump kann älter sein als der Code: fehlende Migrationen nachziehen
+	$(STACK) run --rm migrate
 
 # --- Alles ---------------------------------------------------------------------
 
