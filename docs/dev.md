@@ -127,6 +127,13 @@ lädt eine `rxResource` die Seite. Bedienelemente ändern nur die URL; so lassen
 verlinken, und Zurück/Vor im Browser funktioniert. Ungültige Werte in der URL werden ignoriert.
 API-Fehler zeigt ein Interceptor als Snackbar (`core/problem-details.ts`).
 
+**Ticketformular (`/tickets/new`, `/tickets/:id`):** Signal Form (`@angular/forms/signals`);
+`[formField]` funktioniert auch mit `mat-select`, weil Signal Forms klassische
+`ControlValueAccessor`-Controls über eine Brücke anbinden. Gespeichert wird mit der zuletzt
+geladenen `version`. Bei 409 zeigt die Seite einen Hinweis mit „Neu laden“, bei 422 erscheinen
+die Violations des Backends am jeweiligen Feld. Schließen ist gesperrt, solange es ungespeicherte
+Änderungen gibt, Löschen fragt vorher nach.
+
 ## Tests und Checks
 
 ```bash

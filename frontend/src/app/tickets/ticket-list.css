@@ -1,5 +1,13 @@
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 h1 {
-  margin: 0 0 1rem;
+  margin: 0;
   font: var(--mat-sys-headline-small);
 }
 
@@ -71,4 +79,22 @@ td[data-priority='high'] {
   padding: 2rem 1rem;
   text-align: center;
   color: var(--mat-sys-on-surface-variant);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: var(--mat-sys-surface-container-high);
+}
+
+.mat-column-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mat-column-title a:hover,
+.mat-column-title a:focus-visible {
+  text-decoration: underline;
 }

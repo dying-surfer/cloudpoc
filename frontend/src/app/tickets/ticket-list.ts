@@ -10,7 +10,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSortModule, Sort, SortDirection } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
-import { ActivatedRoute, Params, Router } from '@angular/router';
+import { ActivatedRoute, Params, Router, RouterLink } from '@angular/router';
 import { GermanPaginatorIntl } from '../core/german-paginator-intl';
 import { TicketApiService } from './ticket-api.service';
 import {
@@ -56,6 +56,7 @@ type TextFilter = 'q' | 'assignee';
     MatSelectModule,
     MatSortModule,
     MatTableModule,
+    RouterLink,
   ],
   templateUrl: './ticket-list.html',
   styleUrl: './ticket-list.css',
@@ -174,6 +175,10 @@ export default class TicketList {
       },
       false,
     );
+  }
+
+  protected openTicket(id: string): void {
+    void this.router.navigate([id], { relativeTo: this.route });
   }
 
   protected resetFilters(): void {
