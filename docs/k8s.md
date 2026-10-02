@@ -90,10 +90,12 @@ In der VM eine Kopie für `admin` lesbar machen:
 sudo install -m 600 -o admin -g admin /etc/rancher/k3s/k3s.yaml ~/k3s.yaml
 ```
 
-Auf dem Host `kubectl` und `helm` installieren (Bluefin hat Homebrew) und die Datei holen:
+Auf dem Host `kubectl` und `helm` installieren und die Datei holen. Auf Bluefin kommen
+Kommandozeilen-Werkzeuge über Homebrew (nach `/home/linuxbrew`, ohne Neustart), nicht per
+`rpm-ostree install` ins System-Image. Vielleicht sind sie auch schon da:
 
 ```bash
-brew install kubectl helm
+command -v kubectl helm || brew install kubectl helm
 
 mkdir -p ~/.kube
 scp admin@192.168.122.y:k3s.yaml ~/.kube/cloudpoc-k3s.yaml
