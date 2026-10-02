@@ -104,6 +104,16 @@ virt-install \
   --graphics none --noautoconsole
 ```
 
+**Bluefin mit virt-manager als Flatpak:** `virt-install` läuft dann in der Flatpak-Sandbox und sieht
+`~/vms` nicht („user-data.yaml“ nicht gefunden). Den Ordner beim Aufruf freigeben und den Pfad
+absolut angeben (`--cloud-init user-data=$HOME/vms/k3s/user-data.yaml`):
+
+```bash
+alias virt-install='flatpak run --filesystem=~/vms --command=virt-install org.virt_manager.virt-manager'
+```
+
+Die Disk unter `/var/lib/libvirt/images` braucht keine Freigabe, die öffnet libvirtd auf dem Host.
+
 Kennt `virt-install` `debian13` noch nicht (Fehler „Unknown OS name“), stattdessen
 `--osinfo linux2024` nehmen. Das steuert nur Voreinstellungen für virtuelle Hardware.
 
