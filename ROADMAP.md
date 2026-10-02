@@ -104,14 +104,14 @@ Makefile                einheitliche Entry-Points
 Eine VM auf dem Host (statt Homeserver mit Domain), darauf eine einzige Instanz des Stacks.
 Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 
-- [ ] VM auf dem Host (Debian 13 + Docker), Anleitung in `docs/vm.md`
-- [ ] Stack auf der VM: persistentes DB-Volume, `.env` nur auf der VM, `restart: unless-stopped`
-- [ ] Self-hosted Runner in der VM: eigener unprivilegierter User, nur vom Deploy-Workflow genutzt
+- [x] VM auf dem Host (Debian 13 + Docker), Anleitung in `docs/vm.md`
+- [x] Stack auf der VM: persistentes DB-Volume, `.env` nur auf der VM, `restart: unless-stopped`
+- [x] Self-hosted Runner in der VM: eigener unprivilegierter User, nur vom Deploy-Workflow genutzt
       (öffentliches Repo: nie bei `pull_request`, kein Code aus fremden PRs auf der VM)
-- [ ] Deploy-Workflow: auf Knopfdruck eine beliebige Version (SHA-Tag aus der CI) auf der VM ausrollen,
+- [x] Deploy-Workflow: auf Knopfdruck eine beliebige Version (SHA-Tag aus der CI) auf der VM ausrollen,
       Migration als One-Shot wie im Stack. Manuell statt automatisch, weil die VM nur lokal auf dem
       Laptop läuft (automatischer Deploy nach Staging: M9)
-- [ ] Backup: `make db-dump` auf der VM, Restore-Test mit `make db-import`
+- [x] Backup: `make db-dump` auf der VM, Restore-Test mit `make db-import`
 
 **Fertig, wenn:** Jede Version aus der CI per Knopfdruck auf der VM landet, die Daten ein Redeploy
 überleben und ein Restore aus einem Dump gelingt.
@@ -157,6 +157,6 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
     begründete Ausnahmen in `.trivyignore.yaml` mit Ablaufdatum.
 
 ### Durchgehend – Dokumentation
-- [ ] `docs/` mit einer Seite je Umgebung (dev, vm, k8s, azure)
+- [ ] `docs/` mit einer Seite je Umgebung (dev, vm, k8s, azure): dev und vm vorhanden
 - [ ] ADRs in `docs/adr/` (z. B. Symfony ohne API Platform, FrankenPHP vs. php-fpm/nginx,
       Compose vs. Kubernetes, Auth-Optionen)

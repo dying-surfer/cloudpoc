@@ -72,3 +72,11 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     Fremde Actions mit Sicherheitsvorgeschichte auf Commit-SHA pinnen (`trivy-action`).
   - Dependabot monatlich, Minor/Patch gebündelt, Majors einzeln; PRs sind optional.
   - Workflows prüfen: `npx prettier --check` und `actionlint` (Binary ins Scratchpad laden).
+- **M6** (VM: Deployment via Compose): fertig, in `main` gemergt. Anleitung: `docs/vm.md`.
+  - Debian-VM mit Docker auf dem Host, Stack mit `restart: unless-stopped`, `.env` nur auf der VM
+    (`/srv/cloudpoc/.env`, `ENV_FILE`), Container-Logs per `journald`.
+  - Self-hosted Runner (User `runner`, Label `vm`) nur für `.github/workflows/deploy.yml`:
+    manuell per `workflow_dispatch`, Version (SHA, Branch, Tag) wird auf den SHA-Tag aufgelöst, dann `make deploy`.
+    Nie `pull_request` auf dem Self-hosted Runner (öffentliches Repo).
+  - Backup auf der VM: `make db-dump DUMP_DIR=/srv/cloudpoc/dumps` (nicht im Checkout, den räumt der nächste Deploy);
+    für `db-import` `BACKEND_IMAGE` auf das laufende Image setzen.

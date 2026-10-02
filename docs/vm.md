@@ -294,3 +294,50 @@ sudo journalctl -t cloudpoc-backend-1 -b -1                    # nur aus dem vor
   `sudo journalctl -u 'actions.runner.*' -f`. Ausführlicher: `/home/runner/actions-runner/_diag/`.
 - **Docker-Daemon**, z. B. wenn nach einem Reboot ein Container nicht hochkommt:
   `sudo journalctl -u docker`.
+
+## 9. Backup und Restore
+
+Die `make`-Targets aus dem Stack (`db-dump`, `db-import`) funktionieren auch auf der VM, mit
+denselben Einstellungen wie im Deploy-Workflow. Ausgeführt im Checkout des letzten Deploys als `runner`
+(der ist in der Gruppe `docker` und braucht kein `sudo`):
+
+```bash
+sudo -iu runner
+cd ~/actions-runner/_work/cloudpoc/cloudpoc
+export CONTAINER=docker ENV_FILE=/srv/cloudpoc/.env
+# Für den migrate-Lauf nach dem Import: dasselbe Image wie das laufende Backend
+export BACKEND_IMAGE=$(docker inspect -f '{{.Config.Image}}' cloudpoc-backend-1)
+```
+
+Drei Fallen, die diese Einstellungen umgehen:
+
+- **Dumps nicht im Checkout lassen:** Beim nächsten Deploy räumt `actions/checkout` den Ordner
+  auf (`git clean`), dabei wäre `db/dumps/` weg. Deshalb `DUMP_DIR` auf der Kommandozeile nach
+  `/srv/cloudpoc/dumps` umbiegen. Der Ordner gehört `runner` und ist nur für ihn lesbar, denn die Dumps
+  enthalten echte Daten.
+- **`BACKEND_IMAGE` setzen:** `db-import` lässt danach `migrate` laufen. Ohne die Variable sucht
+  Compose das lokale Image `localhost/cloudpoc-backend:local`, und das gibt es auf der VM nicht.
+- **Nicht während eines Deploys:** Beide nutzen denselben Checkout und denselben Stack.
+
+**Backup:**
+
+```bash
+make db-dump DUMP_DIR=/srv/cloudpoc/dumps
+ls -lh /srv/cloudpoc/dumps/
+```
+
+**Restore-Test:** Dump ziehen, im Browser etwas ändern (z. B. ein Ticket löschen), Dump einspielen,
+und die Änderung ist wieder weg:
+
+```bash
+make db-dump DUMP_DIR=/srv/cloudpoc/dumps
+# … im Browser ein Ticket löschen …
+make db-import FILE=/srv/cloudpoc/dumps/cloudpoc-<STAMP>.dump   # fragt nach, dann migrate
+curl -s http://localhost:8080/readyz
+```
+
+`db-import` ersetzt die Daten in einer einzigen Transaktion (`--single-transaction`). Bricht der
+Import ab, bleibt die DB, wie sie war.
+
+Die Dumps liegen nur auf der VM, sie gehen also mit ihr verloren. Ein Offsite-Backup (restic) ist für
+M9 geplant.
