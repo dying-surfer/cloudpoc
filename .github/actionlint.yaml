@@ -1,0 +1,4 @@
+# Konfiguration für actionlint (Workflows prüfen, siehe CLAUDE.md)
+self-hosted-runner:
+  # Label des Runners in der VM (docs/vm.md)
+  labels: [vm]

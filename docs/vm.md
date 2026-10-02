@@ -158,13 +158,71 @@ Jeder kann einen PR öffnen und darin Workflows ändern. Damit kein fremder Code
   contributors*: **Require approval for all external contributors**.
 - Fork-PRs nie freigeben, ohne vorher die Änderungen an `.github/` gelesen zu haben.
 
-## 6. Prüfen
+## 6. Deploy
 
-Ist der erste Deploy durchgelaufen (in der VM als `admin`):
+`.github/workflows/deploy.yml` startet nach jedem **grünen CI-Lauf auf `main`**, der durch einen Push
+entstanden ist (auch ein PR-Merge ist ein Push). PR-Läufe deployen nie. Der Job läuft auf dem Runner
+mit Label `vm`, checkt genau den geprüften Commit aus und ruft `make deploy` mit den SHA-Images auf:
+`docker compose pull` und `up -d`. Dabei läuft `migrate` einmal, dann starten `backend`, `frontend`
+und `proxy` neu. Das DB-Volume bleibt.
+
+Wichtig: `workflow_run` wirkt nur aus der Workflow-Datei auf `main`. Der erste Deploy passiert also
+erst nach dem Merge, vorher kann der Workflow nicht auslösen.
+
+Auf GitHub unter *Actions → Deploy* zu sehen. In der VM als `admin` prüfen:
 
 ```bash
-sudo docker ps                                  # proxy, frontend, backend, db laufen; migrate ist beendet
-curl -s http://localhost:8080/readyz            # {"status":"ok",…}
+sudo docker ps -a --filter label=com.docker.compose.project=cloudpoc
+#   proxy, frontend, backend, db: Up … (healthy); migrate: Exited (0)
+sudo docker inspect -f '{{.Config.Image}}' cloudpoc-backend-1   # ghcr.io/…:<SHA des Commits>
+curl -s http://localhost:8080/readyz                            # {"status":"ok",…}
 ```
 
 Vom Host aus im Browser: `http://192.168.122.x:8080`.
+
+## 7. Restart nachweisen
+
+Alle Dienste haben `restart: unless-stopped`: Docker startet sie neu, wenn sie sich beenden oder die
+VM neu startet, **außer** man hat sie selbst gestoppt. `migrate` hat `restart: "no"`, weil er als
+One-Shot sonst in einer Endlosschleife liefe. Drei Versuche, alle in der VM als `admin`:
+
+**a) Absturz:** Den Hauptprozess des Backends hart beenden, so als wäre er abgestürzt.
+
+```bash
+sudo docker inspect -f '{{.RestartCount}}' cloudpoc-backend-1          # z. B. 0
+sudo kill -9 "$(sudo docker inspect -f '{{.State.Pid}}' cloudpoc-backend-1)"
+sleep 5
+sudo docker ps --filter name=cloudpoc-backend-1                          # Up 4 seconds
+sudo docker inspect -f '{{.RestartCount}}' cloudpoc-backend-1          # eins mehr
+```
+
+**b) Selbst gestoppt bleibt gestoppt:**
+
+```bash
+sudo docker stop cloudpoc-frontend-1
+sleep 15
+sudo docker ps -a --filter name=cloudpoc-frontend-1                      # Exited, kein Neustart
+```
+
+Das Frontend bleibt jetzt bewusst aus, für Versuch c).
+
+**c) Neustart der VM:**
+
+```bash
+sudo reboot
+# neu einloggen, dann:
+sudo docker ps -a --filter label=com.docker.compose.project=cloudpoc
+```
+
+Erwartung: `proxy`, `backend`, `db` laufen wieder, `migrate` steht unverändert auf `Exited (0)`
+(läuft nicht noch mal). `frontend` ist weiterhin aus, weil du es in b) gestoppt hast. Genau das
+unterscheidet `unless-stopped` von `always`. Wieder anschalten und prüfen:
+
+```bash
+sudo docker start cloudpoc-frontend-1
+curl -s http://localhost:8080/readyz
+sudo systemctl status 'actions.runner.*'      # der Runner ist auch wieder da
+```
+
+Dass die Container nach dem Reboot überhaupt starten, liegt am Dienst `docker.service`, den das
+Debian-Paket automatisch aktiviert (`systemctl is-enabled docker` → `enabled`).
