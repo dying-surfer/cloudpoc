@@ -292,10 +292,12 @@ Browser ─▶ Traefik ─(Ingress-Regel "/")─▶ Service <release>-frontend �
 
 ### Pull-Secret für GHCR
 
-Die Images in GHCR sind privat, der Cluster braucht Zugangsdaten zum Herunterladen. Auf GitHub
-unter *Settings → Developer settings → Personal access tokens → Tokens (classic)* ein Token nur
-mit dem Scope **`read:packages`** anlegen (GHCR akzeptiert keine fine-grained Tokens), Ablaufdatum
-setzen. Dann auf dem Host:
+Die Images in GHCR sind privat, der Cluster braucht Zugangsdaten zum Herunterladen. Ein Token
+(classic) nur mit dem Scope **`read:packages`** anlegen, GHCR akzeptiert keine fine-grained Tokens.
+Der Link öffnet das Formular mit vorbelegtem Scope, Ablaufdatum setzen:
+<https://github.com/settings/tokens/new?scopes=read:packages&description=k3s-ghcr-pull>
+(im Menü: Profilbild → *Settings* → ganz unten *Developer settings* → *Tokens (classic)*).
+Dann auf dem Host:
 
 ```bash
 export KUBECONFIG=~/.kube/cloudpoc-k3s.yaml
