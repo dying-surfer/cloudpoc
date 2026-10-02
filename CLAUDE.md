@@ -52,3 +52,6 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Backend-Image: `backend/Dockerfile` (FrankenPHP, Multi-Stage, User `app`, Port 8080), `make backend-image`.
   - Frontend-Image: `frontend/Dockerfile` (Node-Build → nginx-unprivileged, Port 8080), `make frontend-image`.
     `config.json` ist nicht im Image, sie wird pro Umgebung nach `/usr/share/nginx/html/config.json` gemountet.
+  - Stack: `deploy/compose/` (proxy = nginx, frontend, backend, migrate als One-Shot, db mit Volume), Port 8088,
+    Secrets in `deploy/compose/.env` (nicht im Repo, Vorlage `.env.example`). `make images`, `make stack-up` usw.
+    Reverse Proxy: nginx (Kriterium des Users: production-ready und verbreitet); Edge-Proxy in M6 voraussichtlich Traefik.

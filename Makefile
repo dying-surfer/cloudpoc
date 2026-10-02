@@ -82,6 +82,30 @@ backend-image: ## Prod-Image des Backends bauen (cloudpoc-backend:$(TAG))
 frontend-image: ## Prod-Image des Frontends bauen (cloudpoc-frontend:$(TAG))
 	podman build -t cloudpoc-frontend:$(TAG) frontend
 
+# --- Prod-naher Stack (nur auf dem Host) -----------------------------------------
+# Nutzt die lokal gebauten Images; Secrets kommen aus deploy/compose/.env.
+
+STACK = podman compose -f deploy/compose/compose.yaml
+
+.PHONY: images stack-up stack-ps stack-logs stack-down stack-destroy
+
+images: backend-image frontend-image ## Beide Prod-Images bauen
+
+stack-up: ## Stack starten (http://localhost:8088); vorher make images
+	$(STACK) up -d
+
+stack-ps: ## Status der Services im Stack
+	$(STACK) ps -a
+
+stack-logs: ## Logs aller Services verfolgen (Strg+C beendet)
+	$(STACK) logs -f
+
+stack-down: ## Stack stoppen und entfernen, die Daten (Volume) bleiben
+	$(STACK) down
+
+stack-destroy: ## Stack samt DB-Volume entfernen (alle Daten weg!)
+	$(STACK) down -v
+
 # --- Alles ---------------------------------------------------------------------
 
 test: backend-check frontend-check ## Alle Checks und Tests (Backend und Frontend)

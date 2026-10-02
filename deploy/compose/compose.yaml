@@ -1,0 +1,87 @@
+# Prod-naher Stack: dieselben Images wie später in Staging und Prod.
+# Start (auf dem Host): make stack-up   ·   Voraussetzung: .env (Vorlage: .env.example)
+#
+# Nur der Proxy veröffentlicht einen Port. Alle anderen Services sind nur im
+# Compose-Netz erreichbar, unter ihrem Service-Namen (backend, frontend, db).
+name: cloudpoc
+
+# Gemeinsame Einstellungen von backend und migrate (YAML-Anker)
+x-backend: &backend
+  image: ${BACKEND_IMAGE:-localhost/cloudpoc-backend:local}
+  environment:
+    # ${VAR:?Text}: Compose bricht mit dieser Meldung ab, wenn VAR fehlt
+    APP_SECRET: ${APP_SECRET:?APP_SECRET fehlt, siehe .env.example}
+    DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt, siehe .env.example}@db:5432/app?serverVersion=17&charset=utf8
+
+services:
+  proxy:
+    image: docker.io/nginxinc/nginx-unprivileged:stable-alpine
+    ports:
+      - "${HTTP_PORT:-8088}:8080"
+    volumes:
+      # Templates werden beim Start per envsubst nach /etc/nginx/conf.d/ geschrieben
+      - ./proxy/default.conf.template:/etc/nginx/templates/default.conf.template:ro,z
+    environment:
+      # Schreibt den DNS-Server des Containers nach ${NGINX_LOCAL_RESOLVERS} (fürs Template)
+      NGINX_ENTRYPOINT_LOCAL_RESOLVERS: "1"
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-localhost/cloudpoc-frontend:local}
+    volumes:
+      # Runtime-Config dieser Umgebung (nicht im Image, siehe frontend/Dockerfile)
+      - ./config.json:/usr/share/nginx/html/config.json:ro,z
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/config.json"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  backend:
+    <<: *backend
+    depends_on:
+      migrate:
+        # Erst starten, wenn die Migrationen erfolgreich durchgelaufen sind
+        condition: service_completed_successfully
+    healthcheck:
+      # Readiness inkl. DB. PHP statt curl, weil PHP im Image sicher vorhanden ist.
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/readyz') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+  # One-Shot-Job: dasselbe Image wie das Backend, nur ein anderer Befehl.
+  # Läuft bei jedem `up`, migriert und beendet sich. Sind schon alle Migrationen
+  # eingespielt, passiert nichts.
+  migrate:
+    <<: *backend
+    command: ["php", "bin/console", "doctrine:migrations:migrate", "--no-interaction", "--allow-no-migration"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: docker.io/library/postgres:17
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt, siehe .env.example}
+      POSTGRES_DB: app
+    volumes:
+      # Benanntes Volume: Die Daten überleben `down` und `up`.
+      # Weg sind sie erst mit `down -v` (bzw. make stack-destroy).
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  db-data:
