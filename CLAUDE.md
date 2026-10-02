@@ -57,7 +57,18 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     jede Spalte ein und bricht bei unbekannten ab: Neue Spalten dort eintragen.
   - Stack: `deploy/compose/` (proxy = nginx, frontend, backend, migrate als One-Shot, db mit Volume), Port 8088,
     Secrets in `deploy/compose/.env` (nicht im Repo, Vorlage `.env.example`). `make images`, `make stack-up` usw.
-    Reverse Proxy: nginx (Kriterium des Users: production-ready und verbreitet); Edge-Proxy in M6 voraussichtlich Traefik.
+    Reverse Proxy: nginx (Kriterium des Users: production-ready und verbreitet); Edge-Proxy mit TLS voraussichtlich Traefik (M9).
   - Smoke-Tests: `e2e/` (Playwright, nur Zusammenspiel prüfen). `make stack-smoke` (Host) läuft im Playwright-Image
     im Compose-Netz gegen `http://proxy:8080`; `make e2e-check` statisch, Teil von `make test`. Im Devcontainer
     startet Chromium nicht (Systembibliotheken fehlen). `@playwright/test` exakt pinnen, der Image-Tag folgt daraus.
+- **M5** (CI mit GitHub Actions + GHCR): fertig, in `main` gemergt (per PR auf GitHub). Remote: `dying-surfer/cloudpoc`.
+  Pushen, PRs und Mergen macht der User auf dem Host (im Devcontainer kein `gh`, kein SSH-Key).
+  - `.github/workflows/ci.yml`: Jobs `backend` (mit Postgres-Service), `frontend`, `e2e-check` → `images`
+    (Buildx, GHA-Cache, Push nach `ghcr.io/dying-surfer/cloudpoc-{backend,frontend}`) → `smoke` und `scan`.
+  - Image-Tags: voller Commit-SHA (bei PRs der Merge-Commit), auf `main` zusätzlich `:main`. Pakete sind privat.
+  - `smoke` nutzt dieselben `make`-Targets wie der Host, mit `CONTAINER=docker` (Standard `podman`).
+  - Ignore-Dateien heißen `.dockerignore` (BuildKit liest kein `.containerignore`).
+  - Trivy-Job `scan` ist per `if: false` abgeschaltet (Funde in den Basis-Images, siehe ROADMAP M9).
+    Fremde Actions mit Sicherheitsvorgeschichte auf Commit-SHA pinnen (`trivy-action`).
+  - Dependabot monatlich, Minor/Patch gebündelt, Majors einzeln; PRs sind optional.
+  - Workflows prüfen: `npx prettier --check` und `actionlint` (Binary ins Scratchpad laden).

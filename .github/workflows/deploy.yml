@@ -1,0 +1,53 @@
+# Deploy: Nach grüner CI auf main rollt der Self-hosted Runner in der VM genau die
+# Images aus, die die CI gebaut hat (Tag = Commit-SHA). Einrichtung: docs/vm.md.
+#
+# Absicherung (öffentliches Repo): workflow_run wird nur aus der Workflow-Datei auf
+# main ausgelöst, ein PR kann diese Datei also nicht für sich ändern. Zusätzlich nur
+# Läufe, die durch einen Push auf main entstanden sind, nie durch einen PR.
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+# Deploys nacheinander, nie abbrechen (ein halber Deploy ist schlimmer als ein später)
+concurrency:
+  group: deploy-vm
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: Deploy auf die VM
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: [self-hosted, vm]
+    timeout-minutes: 15
+    env:
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      CONTAINER: docker
+      ENV_FILE: /srv/cloudpoc/.env
+      BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-backend:${{ github.event.workflow_run.head_sha }}
+      FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/cloudpoc-frontend:${{ github.event.workflow_run.head_sha }}
+    steps:
+      # Genau der Commit, den die CI geprüft hat (nicht der aktuelle Stand von main)
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.SHA }}
+      # Die Pakete in GHCR sind privat. Das Token gilt nur für diesen Lauf,
+      # die Action meldet sich am Ende wieder ab.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: make deploy
+      # Der Port kommt aus HTTP_PORT in der .env der VM (docs/vm.md: 8080)
+      - name: Readiness prüfen
+        run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors http://localhost:8080/readyz
+      - if: always()
+        run: make stack-ps

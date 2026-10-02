@@ -3,7 +3,7 @@
 Ein bewusst langweiliges Ticket-CRUD (Tabelle, Filter, Detailformular) als Vehikel, um
 PHP + Angular + Postgres „cloud-native“ zu entwickeln, zu testen und zu betreiben:
 Devcontainer mit Wegwerf-DB → mehrere Stagings → Prod mit persistenter, gesicherter DB.
-Zielplattformen reichen vom Homeserver bis Azure.
+Zielplattformen reichen von einer VM zu Hause bis Azure.
 
 ## Entscheidungen
 
@@ -14,7 +14,7 @@ Zielplattformen reichen vom Homeserver bis Azure.
 | Datenbank       | PostgreSQL 17                                                           |
 | API             | JSON, REST-Stil, RPC-Endpunkte nach Bedarf, Fehler als RFC 9457         |
 | CI/CD, Registry | GitHub Actions + GHCR                                                   |
-| Deployment      | Option A: Compose (Homeserver) · Option B: Helm/Kubernetes (k3s, AKS)   |
+| Deployment      | Option A: Compose (VM) · Option B: Helm/Kubernetes (k3s, AKS)           |
 | Container lokal | Podman (Docker-kompatibel)                                              |
 
 ## Leitprinzipien
@@ -34,7 +34,7 @@ Zielplattformen reichen vom Homeserver bis Azure.
 .devcontainer/          Devcontainer (workspace + postgres)
 backend/                Symfony
 frontend/               Angular
-deploy/compose/         Compose-Stack (prod-like, Stagings, Homeserver)
+deploy/compose/         Compose-Stack (prod-like, lokal und auf der VM)
 deploy/helm/cloudpoc/   Helm-Chart + values je Umgebung
 infra/azure/            Terraform
 db/                     reset / seed / dump / import / anonymize
@@ -93,24 +93,27 @@ Makefile                einheitliche Entry-Points
 
 ### M5 – CI mit GitHub Actions + GHCR
 - [x] GitHub-Remote anlegen
-- [ ] `ci.yml` für PRs und Pushes: Lint, PHPStan, PHPUnit (Postgres-Service), Angular-Lint/Test/Build,
+- [x] `ci.yml` für PRs und Pushes: Lint, PHPStan, PHPUnit (Postgres-Service), Angular-Lint/Test/Build,
       Image-Build mit Cache, Trivy-Scan (Job vorhanden, abgeschaltet, siehe M9), Playwright-Smoke
-- [ ] Push der Images nach GHCR (`:sha`, `:main`)
+- [x] Push der Images nach GHCR (`:sha`, `:main`)
 - [x] Dependabot (monatlich, Minor/Patch gebündelt; PRs blockieren nichts)
 
 **Fertig, wenn:** Ein PR grün durchläuft und die Images in GHCR liegen.
 
-### M6 – Homeserver: Stagings & Prod via Compose
-- [ ] Traefik/Caddy mit TLS, Routing per Host (`<name>.staging.example.com`, `app.example.com`)
-- [ ] **Mehrere Stagings**: ein Compose-Projekt pro Staging (`-p staging-<name>`), jeweils mit eigener DB
-- [ ] `make staging-reset ENV=<name>` (drop, migrate, seed)
-- [ ] Prod: persistentes Volume, `restart: unless-stopped`, Backups (pg_dump/pgBackRest) mit
-      Offsite-Kopie (restic → S3/B2)
-- [ ] Workflows: `deploy-staging.yml` (main → default-Staging, dispatch → benanntes Staging),
-      `deploy-prod.yml` (Tag `v*`, gleiches Image, Approval), `reset-staging.yml`
-- [ ] Doku `docs/homeserver.md` (SSH- vs. Self-hosted-Runner, Podman Quadlets als Alternative)
+### M6 – VM: Deployment via Compose
+Eine VM auf dem Host (statt Homeserver mit Domain), darauf eine einzige Instanz des Stacks.
+Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 
-**Fertig, wenn:** Zwei Stagings parallel laufen, der Reset nur eines davon betrifft und ein Restore-Test gelingt.
+- [ ] VM auf dem Host (Debian 13 + Docker), Anleitung in `docs/vm.md`
+- [ ] Stack auf der VM: persistentes DB-Volume, `.env` nur auf der VM, `restart: unless-stopped`
+- [ ] Self-hosted Runner in der VM: eigener unprivilegierter User, nur vom Deploy-Workflow genutzt
+      (öffentliches Repo: nie bei `pull_request`, kein Code aus fremden PRs auf der VM)
+- [ ] Deploy-Workflow: nach grüner CI auf `main` dasselbe Image (SHA-Tag) auf der VM ausrollen,
+      Migration als One-Shot wie im Stack
+- [ ] Backup: `make db-dump` auf der VM, Restore-Test mit `make db-import`
+
+**Fertig, wenn:** Ein Push auf `main` ohne Handgriff auf der VM landet, die Daten ein Redeploy
+überleben und ein Restore aus einem Dump gelingt.
 
 ### M7 – Kubernetes: Helm-Chart & k3s
 - [ ] Helm-Chart: Deployments, Services, Ingress, ConfigMap (`config.json`), Migrations-Job als
@@ -139,6 +142,10 @@ Makefile                einheitliche Entry-Points
 - [ ] GitOps mit Argo CD
 - [ ] Observability: Request-ID, `/metrics`, OpenTelemetry
 - [ ] cosign-Signaturen, SBOM
+- [ ] Getrennte Umgebungen auf VM/Homeserver: Staging und Prod mit eigener DB, Beförderung desselben Images
+      per Tag `v*` mit Freigabe (GitHub-Environment), mehrere benannte Stagings, `make staging-reset`
+- [ ] Edge-Proxy (Traefik) mit TLS und Routing per Hostname (braucht eine Domain)
+- [ ] Offsite-Backup (restic → S3/B2), Podman Quadlets als Alternative zu Compose
 - [ ] Trivy-Scan in CI einschalten (Job `scan` in `ci.yml`, `if: false` entfernen). Stand der ersten Läufe
       (Oktober 2026):
   - Debian/Alpine-Pakete mit Fix (z. B. `pcre2`, `linux-libc-dev`): `apt-get upgrade` bzw. `apk upgrade`
@@ -149,6 +156,6 @@ Makefile                einheitliche Entry-Points
     begründete Ausnahmen in `.trivyignore.yaml` mit Ablaufdatum.
 
 ### Durchgehend – Dokumentation
-- [ ] `docs/` mit einer Seite je Umgebung (dev, homeserver, k8s, azure)
+- [ ] `docs/` mit einer Seite je Umgebung (dev, vm, k8s, azure)
 - [ ] ADRs in `docs/adr/` (z. B. Symfony ohne API Platform, FrankenPHP vs. php-fpm/nginx,
       Compose vs. Kubernetes, Auth-Optionen)
