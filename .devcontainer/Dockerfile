@@ -1,6 +1,6 @@
 # Entwicklungs-Image für den Service "workspace".
 # Enthält alle Werkzeuge für Backend und Frontend – NICHT das Prod-Image (das kommt in M4).
-FROM php:8.4-cli
+FROM php:8.5-cli
 
 ARG NODE_MAJOR=24
 ARG USERNAME=dev
