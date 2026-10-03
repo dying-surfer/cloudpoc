@@ -104,3 +104,56 @@ spec:
           requests:
             # local-path setzt die Größe nicht durch, sie ist hier nur eine Angabe
             storage: 5Gi
+---
+# Legt den Bucket für die Backups an. Das Backup-Plugin erwartet ihn fertig: Die
+# WAL-Archivierung scheitert sonst mit NoSuchBucket. Läuft einmal; ein erneutes
+# kubectl apply lässt den abgeschlossenen Job in Ruhe. Weitere Buckets: von Hand
+# in der Oberfläche oder als weiterer Job.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-create-bucket
+  namespace: rustfs
+  labels:
+    app.kubernetes.io/name: rustfs
+spec:
+  # Startet der Job vor dem Server, versucht er es einfach erneut
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: aws
+          # Die AWS-CLI als S3-Client: spricht mit jedem S3-kompatiblen Server
+          image: amazon/aws-cli:2.37.9
+          command: [sh, -c]
+          args:
+            - aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null || aws s3api create-bucket --bucket "$BUCKET"
+          env:
+            - name: BUCKET
+              value: cloudpoc-backups
+            - name: AWS_ENDPOINT_URL
+              value: http://rustfs:9000
+            - name: AWS_DEFAULT_REGION
+              value: us-east-1
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs
+                  key: RUSTFS_ACCESS_KEY
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs
+                  key: RUSTFS_SECRET_KEY
+            # Die CLI will in ihr Home schreiben, der User 10001 hat keines
+            - name: HOME
+              value: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]

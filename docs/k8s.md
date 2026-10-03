@@ -1115,6 +1115,7 @@ Prüfen:
 
 ```bash
 kubectl get pods,pvc,svc -n rustfs                  # rustfs-0 1/1 Running, PVC data-rustfs-0 Bound
+kubectl get jobs -n rustfs                           # rustfs-create-bucket Complete 1/1
 kubectl logs -n rustfs rustfs-0 | tail
 ```
 
@@ -1126,8 +1127,10 @@ kubectl port-forward -n rustfs svc/rustfs 9001:9001   # http://localhost:9001, S
 ```
 
 Anmelden mit Access Key und Secret Key (`sops -d deploy/secrets/rustfs/rustfs.sops.yaml`, die Werte
-sind base64-kodiert). Noch ist der Speicher leer; den Bucket legt das Backup-Plugin beim ersten
-Schreiben an.
+sind base64-kodiert). Zu sehen ist der leere Bucket `cloudpoc-backups`: Ihn legt der Job
+`rustfs-create-bucket` aus demselben Manifest an. Das Backup-Plugin erwartet den Bucket fertig; ohne
+ihn scheitert die WAL-Archivierung mit `NoSuchBucket` (die Plugin-Doku sagt, er entstehe beim ersten
+Schreiben, das stimmte hier nicht).
 
 Das StatefulSet ist bewusst schlicht: ein Pod, ein Volume, kein TLS, und die Datenbanken nutzen später
 den Root-Zugang. Bei einem echten Anbieter bekäme jede Umgebung einen eigenen Schlüssel, der nur an
@@ -1182,7 +1185,7 @@ Instanzen würde der Operator reihum neu starten und vorher auf ein Standby umsc
 ```bash
 kubectl get pods -n cloudpoc-staging                # cloudpoc-db-1 jetzt 2/2 (Postgres + Sidecar)
 kubectl get objectstore,scheduledbackup,backup -n cloudpoc-staging
-# backup …   PHASE completed  (das sofortige erste Basis-Backup)
+# backup …   PHASE completed  (das sofortige erste Basis-Backup, bei einem neuen Cluster)
 
 # Läuft die WAL-Archivierung? status True, reason ContinuousArchivingSuccess
 kubectl get cluster cloudpoc-db -n cloudpoc-staging \
@@ -1191,6 +1194,12 @@ kubectl get cluster cloudpoc-db -n cloudpoc-staging \
 # Bei Problemen: Logs des Sidecars
 kubectl logs -n cloudpoc-staging cloudpoc-db-1 -c plugin-barman-cloud | tail
 ```
+
+Wird das Backup bei einer **bestehenden** Datenbank eingeschaltet, scheitert das sofortige erste
+Backup mit `requested plugin is not available`: Es startet, während der Postgres-Pod gerade neu gebaut
+wird und der Sidecar noch fehlt. Ein fehlgeschlagenes Backup wird nicht wiederholt, das nächste käme
+erst nach Zeitplan. Deshalb einmal von Hand eines auslösen (siehe unten), sobald `ContinuousArchiving`
+auf `True` steht.
 
 In der Oberfläche von RustFS (`port-forward`, siehe oben) liegt jetzt der Bucket `cloudpoc-backups`,
 darin `cloudpoc-staging/cloudpoc-db/base/` (Basis-Backups) und `…/wals/` (WAL-Dateien).
