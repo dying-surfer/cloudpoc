@@ -123,7 +123,8 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 - [ ] `values.db.mode`: `cnpg` (CloudNativePG mit 1 Instanz, in Prod mit Backup/PITR; Anzahl als Value,
       Replikas erst bei mehreren Nodes sinnvoll)
       oder `external` (Managed DB)
-- [ ] Stagings als Namespaces `staging-<name>`, optional Preview-Envs pro PR
+- [ ] Namespaces `<app>-<umgebung>` (`cloudpoc-staging`), weitere Stagings als `cloudpoc-staging-<name>`,
+      optional Preview-Envs pro PR
 - [x] Secrets mit SOPS (age): `deploy/secrets/<ns>/`, `make k8s-secrets`, `make secrets-check`
 - [ ] Deploy-Workflows um einen Helm-Pfad erweitern
 

@@ -23,6 +23,14 @@ for f in */*.sops.yaml; do
     fail=1
     continue
   fi
+  # Der Ordner ist der Namespace (make k8s-secrets NS=…): metadata.namespace muss
+  # dazu passen, sonst landet das Secret woanders als der Deploy
+  ns=$(awk '$1 == "namespace:" { print $2; exit }' "$f")
+  if [ "$ns" != "${f%%/*}" ]; then
+    echo "FEHLER: $f hat namespace \"$ns\", der Ordner heißt ${f%%/*}" >&2
+    fail=1
+    continue
+  fi
   echo "ok  $f"
 done
 exit "$fail"

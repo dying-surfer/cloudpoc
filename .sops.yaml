@@ -3,9 +3,9 @@
 # Hier stehen nur öffentliche age-Schlüssel: Mit ihnen lässt sich verschlüsseln,
 # entschlüsseln nur mit dem privaten Schlüssel (~/.config/sops/age/keys.txt auf dem Host).
 creation_rules:
-  # Kubernetes-Secrets für staging. Verschlüsselt werden nur die Werte unter
+  # Kubernetes-Secrets für cloudpoc-staging. Verschlüsselt werden nur die Werte unter
   # data/stringData, Name und Namespace bleiben lesbar (sichtbar im Diff).
   # Weitere Umgebungen bekommen eine eigene Regel (ggf. eigener Schlüssel).
-  - path_regex: deploy/secrets/staging/.*\.sops\.yaml$
+  - path_regex: deploy/secrets/cloudpoc-staging/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     age: age14d8ta7ch7n4jnx096fnvlmvqmvvzzaty7sf6vmrlcyq25h8439fs5328xk

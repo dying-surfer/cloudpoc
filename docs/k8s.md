@@ -294,6 +294,21 @@ Browser ─▶ Traefik ─(Ingress-Regel "/")─▶ Service <release>-frontend �
                                                                          └ /config.json aus der ConfigMap
 ```
 
+### Namespaces: einer pro App und Umgebung
+
+Ein **Namespace** ist ein benannter Bereich im Cluster. Namen müssen nur darin eindeutig sein, Rechte
+(Abschnitt 11) und Quotas hängen an ihm, und `kubectl delete namespace` räumt alles darin ab. Eine harte
+Isolation ist er nicht: Alle Pods teilen sich die Nodes, und ohne NetworkPolicy erreichen sie sich
+auch über Namespace-Grenzen.
+
+Der Cluster ist für mehrere Apps gedacht, deshalb heißen die Namespaces `<app>-<umgebung>`, hier
+`cloudpoc-staging`. So sieht der Deployer einer App die Secrets der anderen nicht, und zwei Apps können
+ihr Pull-Secret beide `ghcr-pull` nennen. Ordner unter `deploy/secrets/` und Werte-Datei unter
+`deploy/helm/values/` tragen denselben Namen.
+
+Solange `ingress.host` leer ist, nimmt der Ingress dieser App **jeden** Hostnamen an. Eine zweite App
+oder Umgebung im Cluster braucht deshalb eigene Hostnamen (Wert `ingress.host`), auch für diese hier.
+
 ### Pull-Secret für GHCR
 
 Die Images in GHCR sind privat, der Cluster braucht Zugangsdaten zum Herunterladen. Ein Token
@@ -305,8 +320,8 @@ Dann auf dem Host:
 
 ```bash
 export KUBECONFIG=~/.kube/cloudpoc-k3s.yaml
-kubectl create namespace staging
-kubectl create secret docker-registry ghcr-pull -n staging \
+kubectl create namespace cloudpoc-staging
+kubectl create secret docker-registry ghcr-pull -n cloudpoc-staging \
   --docker-server=ghcr.io --docker-username=dying-surfer \
   --docker-password='<Token>'
 ```
@@ -321,7 +336,7 @@ Push auf `main`):
 
 ```bash
 git fetch
-helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging \
+helm upgrade --install cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging \
   --set image.tag=$(git rev-parse origin/main) --wait
 ```
 
@@ -331,8 +346,8 @@ geben (kein `:latest`).
 Prüfen:
 
 ```bash
-helm list -n staging                        # cloudpoc   deployed
-kubectl get deploy,pods,svc,ingress -n staging
+helm list -n cloudpoc-staging                        # cloudpoc   deployed
+kubectl get deploy,pods,svc,ingress -n cloudpoc-staging
 curl -s http://192.168.122.51/config.json        # {"banner": "STAGING · k3s", …}
 curl -s http://192.168.122.51/ | head -5         # index.html der Angular-App
 ```
@@ -344,11 +359,11 @@ aber einen Fehler. Das ist erwartet, das Backend fehlt noch.
 eine neue Release-Version erzeugt und Kubernetes die Pods austauscht:
 
 ```bash
-helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reset-then-reuse-values \
+helm upgrade cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging --reset-then-reuse-values \
   --set frontend.config.banner="STAGING · geändert" --wait
-kubectl get pods -n staging                 # neuer Pod-Name: neue Config = neues Pod-Template
-helm history cloudpoc -n staging            # Revision 1 und 2
-helm rollback cloudpoc 1 -n staging --wait  # zurück zum alten Banner
+kubectl get pods -n cloudpoc-staging                 # neuer Pod-Name: neue Config = neues Pod-Template
+helm history cloudpoc -n cloudpoc-staging            # Revision 1 und 2
+helm rollback cloudpoc 1 -n cloudpoc-staging --wait  # zurück zum alten Banner
 ```
 
 `--reset-then-reuse-values` übernimmt die Werte, die beim letzten Mal per `--set`/`-f` gesetzt
@@ -388,17 +403,17 @@ nur das Passwort an das Backend weiter. Die DB trägt `helm.sh/resource-policy: 
 `APP_SECRET` (Symfony) kommt wie das Pull-Secret erst einmal von Hand in den Namespace (per SOPS: Abschnitt 9):
 
 ```bash
-kubectl create secret generic cloudpoc-backend -n staging \
+kubectl create secret generic cloudpoc-backend -n cloudpoc-staging \
   --from-literal=APP_SECRET=$(openssl rand -hex 32)
 ```
 
 ### Ausrollen
 
 ```bash
-helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging \
+helm upgrade --install cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging \
   --set image.tag=$(git rev-parse origin/main) --wait --timeout 5m
 
-kubectl get cluster,pods,svc,ingress -n staging
+kubectl get cluster,pods,svc,ingress -n cloudpoc-staging
 ```
 
 Reihenfolge im Cluster: Der Operator legt die DB an (`cloudpoc-db-1-initdb-…`, dann `cloudpoc-db-1`).
@@ -417,7 +432,7 @@ Die DB ist leer, das Schema fehlt. Seit Abschnitt 7 erledigt das ein Job automat
 zeigt, was der Job tun wird: dasselbe Image, nur ein anderer Befehl.
 
 ```bash
-kubectl exec -n staging deploy/cloudpoc-backend -- \
+kubectl exec -n cloudpoc-staging deploy/cloudpoc-backend -- \
   php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
 curl -s http://192.168.122.51/api/tickets         # {"items":[],…}
 ```
@@ -427,8 +442,8 @@ Im Browser `http://192.168.122.51/`: Tickets anlegen, bearbeiten, löschen.
 **Daten überleben einen Neustart der DB:**
 
 ```bash
-kubectl delete pod -n staging cloudpoc-db-1
-kubectl get pods -n staging -w                    # cloudpoc-db-1 kommt wieder (Strg+C)
+kubectl delete pod -n cloudpoc-staging cloudpoc-db-1
+kubectl get pods -n cloudpoc-staging -w                    # cloudpoc-db-1 kommt wieder (Strg+C)
 ```
 
 Danach sind die Tickets noch da.
@@ -459,11 +474,11 @@ Release und DB entfernen und neu installieren. Die DB muss extra weg, weil sie
 (sie gehören nicht zum Release):
 
 ```bash
-helm uninstall cloudpoc -n staging
-kubectl delete cluster cloudpoc-db -n staging     # löscht auch das Volume: Daten weg
-kubectl get all,pvc -n staging                    # leer (bis auf evtl. auslaufende Pods)
+helm uninstall cloudpoc -n cloudpoc-staging
+kubectl delete cluster cloudpoc-db -n cloudpoc-staging     # löscht auch das Volume: Daten weg
+kubectl get all,pvc -n cloudpoc-staging                    # leer (bis auf evtl. auslaufende Pods)
 
-helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging \
+helm upgrade --install cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging \
   --set image.tag=$(git rev-parse origin/main) --wait --timeout 5m
 ```
 
@@ -471,8 +486,8 @@ Ablauf: Helm legt DB, Deployments, Services und Ingress an und wartet (`--wait`)
 ist. Dann startet der Hook den Job:
 
 ```bash
-kubectl get jobs,pods -n staging                  # cloudpoc-migrate 1/1 Complete
-kubectl logs -n staging job/cloudpoc-migrate      # [notice] Migrating up to …
+kubectl get jobs,pods -n cloudpoc-staging                  # cloudpoc-migrate 1/1 Complete
+kubectl logs -n cloudpoc-staging job/cloudpoc-migrate      # [notice] Migrating up to …
 curl -s http://192.168.122.51/api/tickets         # {"items":[],…}, ohne kubectl exec
 ```
 
@@ -536,8 +551,8 @@ Einschränkung: Der Migrations-Job läuft auch dann **vor** dem Beenden der alte
 Soll das bei einer heiklen Migration gar nicht vorkommen, das Backend vorher von Hand stoppen:
 
 ```bash
-kubectl scale deployment cloudpoc-backend -n staging --replicas=0
-helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reset-then-reuse-values \
+kubectl scale deployment cloudpoc-backend -n cloudpoc-staging --replicas=0
+helm upgrade cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging --reset-then-reuse-values \
   --set image.tag=<SHA> --set strategy=Recreate --wait
 ```
 
@@ -553,12 +568,12 @@ tun. Mit HPA fehlt `replicas` im Deployment, sonst setzte jedes `helm upgrade` d
 
 ### Test: Update unter Last
 
-Probehalber mit den Prod-Werten in `staging`:
+Probehalber mit den Prod-Werten in `cloudpoc-staging`:
 
 ```bash
-helm upgrade cloudpoc deploy/helm/cloudpoc -n staging --reset-then-reuse-values \
+helm upgrade cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging --reset-then-reuse-values \
   -f deploy/helm/cloudpoc/values-prod.yaml --wait
-kubectl get pods,pdb,hpa -n staging              # je 2 Frontend- und Backend-Pods
+kubectl get pods,pdb,hpa -n cloudpoc-staging              # je 2 Frontend- und Backend-Pods
 ```
 
 In einem zweiten Terminal Requests im Dauerlauf, jeder Statuscode eine Zeile:
@@ -572,9 +587,9 @@ Im ersten Terminal ein Update auslösen. `rollout restart` tauscht alle Pods aus
 neuen Image, ohne dass es eines braucht:
 
 ```bash
-kubectl rollout restart deployment -n staging
-kubectl rollout status deployment/cloudpoc-backend -n staging
-kubectl get pods -n staging -w                   # alte gehen erst, wenn neue ready sind (Strg+C)
+kubectl rollout restart deployment -n cloudpoc-staging
+kubectl rollout status deployment/cloudpoc-backend -n cloudpoc-staging
+kubectl get pods -n cloudpoc-staging -w                   # alte gehen erst, wenn neue ready sind (Strg+C)
 ```
 
 Dann die Schleife mit Strg+C beenden und auswerten:
@@ -611,7 +626,7 @@ gleichem Namen überschreibt man dessen Values. Danach eine Zeile pro Request:
 
 ```bash
 kubectl logs -n kube-system deploy/traefik -f | grep /api/
-# … "GET /api/tickets HTTP/1.1" 200 … "staging-cloudpoc-…@kubernetes" "http://10.42.0.23:8080" 4ms
+# … "GET /api/tickets HTTP/1.1" 200 … "cloudpoc-staging-cloudpoc-…@kubernetes" "http://10.42.0.23:8080" 4ms
 ```
 
 Die vorletzte Angabe ist der Pod, an den Traefik den Request geschickt hat, die letzte die Dauer.
@@ -638,7 +653,7 @@ root auf der VM und wer im Namespace Pods starten darf, kann sie lesen.
 ### Wie SOPS funktioniert
 
 `sops` verschlüsselt in einer YAML-Datei nur die **Werte**, die Schlüssel bleiben lesbar. Welche
-Werte, steht in `.sops.yaml` im Repo: unter `deploy/secrets/staging/` nur `data`/`stringData`.
+Werte, steht in `.sops.yaml` im Repo: unter `deploy/secrets/cloudpoc-staging/` nur `data`/`stringData`.
 Name, Namespace und Typ des Secrets sind also im Diff sichtbar, der Inhalt nicht.
 
 Verschlüsselt wird mit **age**, einem Schlüsselpaar:
@@ -672,10 +687,10 @@ Getestet mit sops 3.13.3. Den Inhalt von `keys.txt` in den Passwortmanager.
 Im Repo auf dem Host (sops findet `.sops.yaml` nur von dort), mit `KUBECONFIG`:
 
 ```bash
-make k8s-secrets NS=staging
+make k8s-secrets NS=cloudpoc-staging
 ```
 
-Für jede Datei in `deploy/secrets/staging/`: `sops -d … | kubectl apply -f -`. Der Klartext läuft
+Für jede Datei in `deploy/secrets/cloudpoc-staging/`: `sops -d … | kubectl apply -f -`. Der Klartext läuft
 nur durch die Pipe. Beim ersten Mal auf ein von Hand angelegtes Secret warnt `kubectl apply`
 wegen der fehlenden Annotation `last-applied-configuration` und ergänzt sie, danach ist Ruhe.
 
@@ -688,9 +703,9 @@ Manifest per `--dry-run=client` erzeugen (legt nichts an) und sofort verschlüss
 beiden Befehlen steht der Klartext kurz auf der Platte, deshalb erst danach committen:
 
 ```bash
-kubectl create secret generic <name> -n staging --from-literal=KEY=<wert> \
-  --dry-run=client -o yaml > deploy/secrets/staging/<name>.sops.yaml
-sops -e -i deploy/secrets/staging/<name>.sops.yaml
+kubectl create secret generic <name> -n cloudpoc-staging --from-literal=KEY=<wert> \
+  --dry-run=client -o yaml > deploy/secrets/cloudpoc-staging/<name>.sops.yaml
+sops -e -i deploy/secrets/cloudpoc-staging/<name>.sops.yaml
 make secrets-check
 ```
 
@@ -702,8 +717,8 @@ Die beiden vorhandenen Dateien sind so aus den von Hand angelegten Secrets entst
 Grundablauf für alles, was per SOPS kommt:
 
 ```bash
-sops edit deploy/secrets/staging/<name>.sops.yaml   # öffnet $EDITOR mit Klartext, verschlüsselt beim Speichern
-make k8s-secrets NS=staging
+sops edit deploy/secrets/cloudpoc-staging/<name>.sops.yaml   # öffnet $EDITOR mit Klartext, verschlüsselt beim Speichern
+make k8s-secrets NS=cloudpoc-staging
 git commit …
 ```
 
@@ -718,8 +733,8 @@ einem Neustart an, `kubectl apply` allein ändert an laufenden Pods nichts.
 
 ```bash
 openssl rand -hex 32                                # neuen Wert erzeugen, per sops edit eintragen
-make k8s-secrets NS=staging
-kubectl rollout restart deployment/cloudpoc-backend -n staging
+make k8s-secrets NS=cloudpoc-staging
+kubectl rollout restart deployment/cloudpoc-backend -n cloudpoc-staging
 ```
 
 Der Neustart läuft als Rolling Update (Abschnitt 8). Symfony signiert damit z. B. CSRF-Tokens und
@@ -730,11 +745,11 @@ Login-Links, die werden ungültig. Unsere API nutzt das bisher nicht.
 von Hand editieren lohnt nicht:
 
 ```bash
-kubectl create secret docker-registry ghcr-pull -n staging \
+kubectl create secret docker-registry ghcr-pull -n cloudpoc-staging \
   --docker-server=ghcr.io --docker-username=dying-surfer --docker-password='<neuer Token>' \
-  --dry-run=client -o yaml > deploy/secrets/staging/ghcr-pull.sops.yaml
-sops -e -i deploy/secrets/staging/ghcr-pull.sops.yaml
-make k8s-secrets NS=staging
+  --dry-run=client -o yaml > deploy/secrets/cloudpoc-staging/ghcr-pull.sops.yaml
+sops -e -i deploy/secrets/cloudpoc-staging/ghcr-pull.sops.yaml
+make k8s-secrets NS=cloudpoc-staging
 ```
 
 Kein Neustart nötig: Das Pull-Secret liest der kubelet bei jedem Image-Pull neu. Danach den alten
@@ -748,13 +763,13 @@ Target zusammen, das später auch der Deploy-Workflow aufruft (wie `make deploy`
 
 ```bash
 git fetch
-make k8s-deploy NS=staging TAG=$(git rev-parse origin/main)
+make k8s-deploy NS=cloudpoc-staging TAG=$(git rev-parse origin/main)
 ```
 
 Was passiert:
 
-1. `make k8s-secrets NS=staging` (Abschnitt 9).
-2. `helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging -f deploy/helm/values/staging.yaml
+1. `make k8s-secrets NS=cloudpoc-staging` (Abschnitt 9).
+2. `helm upgrade --install cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging -f deploy/helm/values/cloudpoc-staging.yaml
    --set image.tag=<TAG> --wait --timeout 5m`. Der Migrations-Job läuft wie gehabt als Hook (Abschnitt 7).
 
 **Werte pro Namespace:** `deploy/helm/values/<namespace>.yaml`, der Dateiname ist der Namespace. Fehlt die
@@ -778,7 +793,7 @@ bei GitHub meldet. Die k3s-API (Port 6443) muss dafür nicht von außen erreichb
 
 Der Runner bekommt **nicht** die Admin-kubeconfig und **nicht** deinen age-Schlüssel, sondern eigene,
 kleinere Zugänge. Wird er kompromittiert (z. B. über einen manipulierten Workflow), ist der Schaden
-auf den Namespace `staging` begrenzt, und beide Zugänge lassen sich einzeln zurückziehen.
+auf den Namespace `cloudpoc-staging` begrenzt, und beide Zugänge lassen sich einzeln zurückziehen.
 
 ### ServiceAccount `deployer`
 
@@ -788,16 +803,16 @@ welchen Ressourcen in *einem* Namespace erlaubt sind, ein `RoleBinding` verbinde
 Alles, was nicht erlaubt ist, ist verboten.
 
 ```bash
-kubectl apply -f deploy/k3s/deployer-staging.yaml
+kubectl apply -f deploy/k3s/deployer-cloudpoc-staging.yaml
 ```
 
-Legt im Namespace `staging` an: ServiceAccount, Role, RoleBinding (alle `deployer`) und das Secret
+Legt im Namespace `cloudpoc-staging` an: ServiceAccount, Role, RoleBinding (alle `deployer`) und das Secret
 `deployer-token` mit einem Token ohne Ablaufdatum.
 
 Was die Role erlaubt: die Ressourcen des Charts verwalten (Deployments, Services, ConfigMaps, Ingress,
 Jobs, HPA, PDB, CNPG-Cluster), Secrets verwalten, Pods und ReplicaSets nur lesen.
 
-Was das **nicht** verhindert: Der `deployer` kann alle Secrets in `staging` lesen (auch das DB-Passwort)
+Was das **nicht** verhindert: Der `deployer` kann alle Secrets in `cloudpoc-staging` lesen (auch das DB-Passwort)
 und dort beliebige Pods starten. Das geht nicht enger, denn Helm speichert seine Releases selbst als
 Secrets. Die Grenze ist der Namespace: kein Zugriff auf `kube-system`, andere Namespaces, Nodes oder CRDs.
 
@@ -809,14 +824,14 @@ wie in Abschnitt 3 (Adresse, CA-Zertifikat, Zugangsdaten), nur mit dem Token sta
 ```bash
 K=~/.kube/cloudpoc-k3s-deployer.yaml
 CA=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
-TOKEN=$(kubectl get secret deployer-token -n staging -o jsonpath='{.data.token}' | base64 -d)
+TOKEN=$(kubectl get secret deployer-token -n cloudpoc-staging -o jsonpath='{.data.token}' | base64 -d)
 
 kubectl --kubeconfig "$K" config set-cluster k3s-cloudpoc --server=https://192.168.122.51:6443
 kubectl --kubeconfig "$K" config set clusters.k3s-cloudpoc.certificate-authority-data "$CA"
 kubectl --kubeconfig "$K" config set-credentials deployer --token="$TOKEN"
-kubectl --kubeconfig "$K" config set-context deployer-staging \
-  --cluster=k3s-cloudpoc --user=deployer --namespace=staging
-kubectl --kubeconfig "$K" config use-context deployer-staging
+kubectl --kubeconfig "$K" config set-context deployer-cloudpoc-staging \
+  --cluster=k3s-cloudpoc --user=deployer --namespace=cloudpoc-staging
+kubectl --kubeconfig "$K" config use-context deployer-cloudpoc-staging
 chmod 600 "$K"
 ```
 
@@ -824,16 +839,16 @@ Prüfen, in einer **neuen Shell** oder mit umgestelltem `KUBECONFIG`:
 
 ```bash
 export KUBECONFIG=~/.kube/cloudpoc-k3s-deployer.yaml
-kubectl get pods                                   # geht (Namespace staging ist voreingestellt)
+kubectl get pods                                   # geht (Namespace cloudpoc-staging ist voreingestellt)
 kubectl get pods -n kube-system                    # Forbidden
 kubectl get nodes                                  # Forbidden
-kubectl auth can-i --list                          # was der deployer in staging darf
+kubectl auth can-i --list                          # was der deployer in cloudpoc-staging darf
 
-make k8s-deploy NS=staging TAG=$(git rev-parse origin/main)   # der eigentliche Test
+make k8s-deploy NS=cloudpoc-staging TAG=$(git rev-parse origin/main)   # der eigentliche Test
 ```
 
-Fehlt der Role ein Recht, bricht Helm mit `… is forbidden: User "system:serviceaccount:staging:deployer"
-cannot <verb> resource "<ressource>" …` ab. Die Meldung nennt genau, was in `deployer-staging.yaml` fehlt.
+Fehlt der Role ein Recht, bricht Helm mit `… is forbidden: User "system:serviceaccount:cloudpoc-staging:deployer"
+cannot <verb> resource "<ressource>" …` ab. Die Meldung nennt genau, was in `deployer-cloudpoc-staging.yaml` fehlt.
 
-**Token zurückziehen:** `kubectl delete secret deployer-token -n staging`, dann die Datei erneut anwenden
+**Token zurückziehen:** `kubectl delete secret deployer-token -n cloudpoc-staging`, dann die Datei erneut anwenden
 und die kubeconfig neu bauen. Das alte Token gilt sofort nicht mehr.

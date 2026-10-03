@@ -233,16 +233,16 @@ helm-check: ## Helm-Chart prüfen: helm lint, kubeconform (alle Werte-Varianten)
 secrets-check: ## Prüfen, dass alle Secrets unter deploy/secrets/ verschlüsselt sind
 	@deploy/check-secrets.sh
 
-k8s-secrets: ## Secrets eines Namespace entschlüsseln und anwenden (Host, NS=staging)
-	@test -n "$(NS)" || { echo "NS fehlt, z. B. make k8s-secrets NS=staging" >&2; exit 1; }
+k8s-secrets: ## Secrets eines Namespace entschlüsseln und anwenden (Host, NS=cloudpoc-staging)
+	@test -n "$(NS)" || { echo "NS fehlt, z. B. make k8s-secrets NS=cloudpoc-staging" >&2; exit 1; }
 	@for f in deploy/secrets/$(NS)/*.sops.yaml; do \
 		sops -d "$$f" | kubectl apply -f - || exit 1; \
 	done
 
 # Alle Werte kommen aus dem Repo (Chart-Defaults + deploy/helm/values/<NS>.yaml), nichts
 # aus dem vorigen Release: deshalb weder --reuse-values noch --reset-then-reuse-values.
-k8s-deploy: ## Version in einen Namespace ausrollen: Secrets, dann helm upgrade (Host, NS=staging TAG=<SHA>)
-	@test -n "$(NS)" || { echo "NS fehlt, z. B. make k8s-deploy NS=staging TAG=<SHA>" >&2; exit 1; }
+k8s-deploy: ## Version in einen Namespace ausrollen: Secrets, dann helm upgrade (Host, NS=cloudpoc-staging TAG=<SHA>)
+	@test -n "$(NS)" || { echo "NS fehlt, z. B. make k8s-deploy NS=cloudpoc-staging TAG=<SHA>" >&2; exit 1; }
 	@echo "$(TAG)" | grep -Eq '^[0-9a-f]{40}$$' || { echo "TAG muss ein voller Commit-SHA sein (ist: $(TAG)), z. B. TAG=\$$(git rev-parse origin/main)" >&2; exit 1; }
 	@test -f deploy/helm/values/$(NS).yaml || { echo "deploy/helm/values/$(NS).yaml fehlt" >&2; exit 1; }
 	@$(MAKE) --no-print-directory k8s-secrets NS=$(NS)

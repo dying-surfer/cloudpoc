@@ -84,24 +84,27 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Backup auf der VM: `make db-dump DUMP_DIR=/srv/cloudpoc/dumps` (nicht im Checkout, den räumt der nächste Deploy);
     für `db-import` `BACKEND_IMAGE` auf das laufende Image setzen.
 - **M7** (Kubernetes: Helm-Chart & k3s): in Arbeit auf `m7-k8s`. Anleitung: `docs/k8s.md`.
+  - Namespaces heißen `<app>-<umgebung>` (`cloudpoc-staging`): Der Cluster ist für mehrere Apps gedacht. Ordner
+    unter `deploy/secrets/` und Werte-Datei unter `deploy/helm/values/` tragen denselben Namen.
   - k3s-VM `192.168.122.51` (Single-Node, Traefik als Ingress), CNPG-Operator 1.30.1 (Chart 0.29.1).
     `kubectl`/`helm` nur auf dem Host (kubeconfig per `KUBECONFIG`), nie im Devcontainer.
   - Chart `deploy/helm/cloudpoc/`: `image.tag` Pflicht (Commit-SHA), `db.mode` `cnpg` | `external`,
     Migrationen als Hook-Job `post-install,pre-upgrade`, `values-prod.yaml` (HPA, PDB).
     Secrets `ghcr-pull` und `cloudpoc-backend` (APP_SECRET) per SOPS (age) in `deploy/secrets/<ns>/`, anwenden mit
-    `make k8s-secrets NS=staging` (Host). Privater Schlüssel nur auf dem Host, nie im Devcontainer. Das DB-Passwort
+    `make k8s-secrets NS=cloudpoc-staging` (Host). Privater Schlüssel nur auf dem Host, nie im Devcontainer. Das DB-Passwort
     erzeugt der CNPG-Operator (Secret `cloudpoc-db-app`), nicht im Repo.
   - Prüfen: `make helm-check` (`deploy/helm/check.sh`, alle Werte-Varianten). Neue Varianten dort eintragen.
     `make secrets-check` prüft, dass alles unter `deploy/secrets/` verschlüsselt ist.
   - Upgrades von Hand mit `--reset-then-reuse-values`, nie `--reuse-values` (übernimmt neue Chart-Defaults nicht).
-  - Deploy: `make k8s-deploy NS=staging TAG=<voller SHA>` (Host): `k8s-secrets`, dann `helm upgrade --install`
+  - Deploy: `make k8s-deploy NS=cloudpoc-staging TAG=<voller SHA>` (Host): `k8s-secrets`, dann `helm upgrade --install`
     mit `deploy/helm/values/<NS>.yaml`, ohne reuse (alle Werte aus dem Repo). `TAG` hat im Makefile den
     Default `local` (Image-Builds), das Target verlangt deshalb 40 Hex-Zeichen. Neue Namespaces: Werte-Datei anlegen.
   - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Deploy-Workflow.
   - Nächstes: Deploy-Workflow (wie M6: Self-hosted Runner in der k3s-VM, User `runner`, Label `k3s`,
-    k3s-API bleibt von außen zu). Schritte: 1. `make k8s-deploy` plus Werte-Datei: gebaut, **Test vom Host
-    steht aus**; 2. VM: Werkzeuge (helm, sops), ServiceAccount + kubeconfig, age-Schlüssel, `sops updatekeys`;
+    k3s-API bleibt von außen zu). Schritte: 1. `make k8s-deploy` plus Werte-Datei: fertig, vom Host getestet; 2a. ServiceAccount `deployer`
+    (`deploy/k3s/deployer-cloudpoc-staging.yaml`): fertig, vom Host getestet; **offen ab hier:**
+    2b. VM: User `runner`, Werkzeuge (kubectl von k3s, helm, sops), kubeconfig des `deployer`, age-Schlüssel, `sops updatekeys`;
     3. Runner registrieren; 4. Workflow `deploy-k8s.yml` (`workflow_dispatch`); 5. Doku.
-    Vom User bestätigt: ServiceAccount `deployer` nur mit Rechten im Namespace `staging` (statt Admin-kubeconfig
+    Vom User bestätigt: ServiceAccount `deployer` nur mit Rechten im Namespace `cloudpoc-staging` (statt Admin-kubeconfig
     von k3s) und eigener age-Schlüssel für den Runner als zweiter Empfänger in `.sops.yaml` (statt Kopie des
     User-Schlüssels).
