@@ -104,8 +104,10 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     k3s-API bleibt von außen zu). Schritte: 1. `make k8s-deploy` plus Werte-Datei: fertig, vom Host getestet; 2a. ServiceAccount `deployer`
     (`deploy/k3s/deployer-cloudpoc-staging.yaml`): fertig, vom Host getestet;
     2b. VM: User `runner`, helm/sops, kubeconfig `/home/runner/.kube/cloudpoc-staging.yaml`, eigener age-Schlüssel
-    (zweiter Empfänger in `.sops.yaml`): fertig, getestet; **offen ab hier:**
-    3. Runner registrieren; 4. Workflow `deploy-k8s.yml` (`workflow_dispatch`); 5. Doku.
+    (zweiter Empfänger in `.sops.yaml`): fertig, getestet;
+    3. Runner `cloudpoc-k3s` registriert (Idle); 4. Workflow `deploy-k8s.yml` geschrieben, **erster Lauf steht aus**
+    (braucht die Datei und das Chart auf `main`, Images gibt es nur für `main`-Commits; Image-Check per GHCR-API
+    ungetestet); 5. Doku steht in docs/k8s.md, Abschnitte 10 und 11.
     Vom User bestätigt: ServiceAccount `deployer` nur mit Rechten im Namespace `cloudpoc-staging` (statt Admin-kubeconfig
     von k3s) und eigener age-Schlüssel für den Runner als zweiter Empfänger in `.sops.yaml` (statt Kopie des
     User-Schlüssels).
