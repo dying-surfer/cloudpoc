@@ -770,3 +770,70 @@ Image-Builds im selben Makefile, das Target lehnt das ab. Zu dem SHA muss die CI
 endet der Deploy nach 5 Minuten mit `ImagePullBackOff`.
 
 Der Namespace muss schon existieren (`kubectl create namespace …`), das Target legt ihn nicht an.
+
+## 11. Deploy-Workflow: Runner in der k3s-VM
+
+Wie bei der Compose-VM (docs/vm.md) deployt ein Self-hosted Runner, der in der VM läuft und sich selbst
+bei GitHub meldet. Die k3s-API (Port 6443) muss dafür nicht von außen erreichbar sein.
+
+Der Runner bekommt **nicht** die Admin-kubeconfig und **nicht** deinen age-Schlüssel, sondern eigene,
+kleinere Zugänge. Wird er kompromittiert (z. B. über einen manipulierten Workflow), ist der Schaden
+auf den Namespace `staging` begrenzt, und beide Zugänge lassen sich einzeln zurückziehen.
+
+### ServiceAccount `deployer`
+
+Ein **ServiceAccount** ist ein Konto für Programme (dein Admin-Zugang ist ein Zertifikat, kein Konto im
+Cluster). Rechte bekommt er über **RBAC**: Eine `Role` listet auf, welche Verben (`get`, `create`, …) auf
+welchen Ressourcen in *einem* Namespace erlaubt sind, ein `RoleBinding` verbindet Role und Konto.
+Alles, was nicht erlaubt ist, ist verboten.
+
+```bash
+kubectl apply -f deploy/k3s/deployer-staging.yaml
+```
+
+Legt im Namespace `staging` an: ServiceAccount, Role, RoleBinding (alle `deployer`) und das Secret
+`deployer-token` mit einem Token ohne Ablaufdatum.
+
+Was die Role erlaubt: die Ressourcen des Charts verwalten (Deployments, Services, ConfigMaps, Ingress,
+Jobs, HPA, PDB, CNPG-Cluster), Secrets verwalten, Pods und ReplicaSets nur lesen.
+
+Was das **nicht** verhindert: Der `deployer` kann alle Secrets in `staging` lesen (auch das DB-Passwort)
+und dort beliebige Pods starten. Das geht nicht enger, denn Helm speichert seine Releases selbst als
+Secrets. Die Grenze ist der Namespace: kein Zugriff auf `kube-system`, andere Namespaces, Nodes oder CRDs.
+
+### kubeconfig für den `deployer`
+
+Auf dem Host, mit der Admin-kubeconfig in `KUBECONFIG`. Die neue Datei besteht aus denselben drei Teilen
+wie in Abschnitt 3 (Adresse, CA-Zertifikat, Zugangsdaten), nur mit dem Token statt des Admin-Zertifikats:
+
+```bash
+K=~/.kube/cloudpoc-k3s-deployer.yaml
+CA=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+TOKEN=$(kubectl get secret deployer-token -n staging -o jsonpath='{.data.token}' | base64 -d)
+
+kubectl --kubeconfig "$K" config set-cluster k3s-cloudpoc --server=https://192.168.122.51:6443
+kubectl --kubeconfig "$K" config set clusters.k3s-cloudpoc.certificate-authority-data "$CA"
+kubectl --kubeconfig "$K" config set-credentials deployer --token="$TOKEN"
+kubectl --kubeconfig "$K" config set-context deployer-staging \
+  --cluster=k3s-cloudpoc --user=deployer --namespace=staging
+kubectl --kubeconfig "$K" config use-context deployer-staging
+chmod 600 "$K"
+```
+
+Prüfen, in einer **neuen Shell** oder mit umgestelltem `KUBECONFIG`:
+
+```bash
+export KUBECONFIG=~/.kube/cloudpoc-k3s-deployer.yaml
+kubectl get pods                                   # geht (Namespace staging ist voreingestellt)
+kubectl get pods -n kube-system                    # Forbidden
+kubectl get nodes                                  # Forbidden
+kubectl auth can-i --list                          # was der deployer in staging darf
+
+make k8s-deploy NS=staging TAG=$(git rev-parse origin/main)   # der eigentliche Test
+```
+
+Fehlt der Role ein Recht, bricht Helm mit `… is forbidden: User "system:serviceaccount:staging:deployer"
+cannot <verb> resource "<ressource>" …` ab. Die Meldung nennt genau, was in `deployer-staging.yaml` fehlt.
+
+**Token zurückziehen:** `kubectl delete secret deployer-token -n staging`, dann die Datei erneut anwenden
+und die kubeconfig neu bauen. Das alte Token gilt sofort nicht mehr.
