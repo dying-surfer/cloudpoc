@@ -34,6 +34,19 @@ COPY --from=docker.io/library/node:${NODE_MAJOR}-slim /usr/local/lib/node_module
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
+# Helm und kubeconform zum Prüfen des Helm-Charts (make helm-check), Versionen wie in CI.
+# Release-Archive von GitHub/get.helm.sh, gegen die veröffentlichten Prüfsummen geprüft.
+ARG HELM_VERSION=4.3.0
+ARG KUBECONFORM_VERSION=0.8.0
+RUN set -e; arch=$(dpkg --print-architecture); cd /tmp \
+    && curl -fsSLO https://get.helm.sh/helm-v${HELM_VERSION}-linux-${arch}.tar.gz \
+    && curl -fsSL https://get.helm.sh/helm-v${HELM_VERSION}-linux-${arch}.tar.gz.sha256sum | sha256sum -c - \
+    && tar xzf helm-v${HELM_VERSION}-linux-${arch}.tar.gz --strip-components=1 -C /usr/local/bin linux-${arch}/helm \
+    && curl -fsSLO https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-${arch}.tar.gz \
+    && curl -fsSL https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/CHECKSUMS | grep " kubeconform-linux-${arch}.tar.gz$" | sha256sum -c - \
+    && tar xzf kubeconform-linux-${arch}.tar.gz -C /usr/local/bin kubeconform \
+    && rm -f /tmp/*.tar.gz
+
 # Unprivilegierter User mit derselben UID wie auf dem Host (siehe userns_mode in compose.yaml)
 RUN groupadd --gid ${USER_GID} ${USERNAME} \
     && useradd --uid ${USER_UID} --gid ${USER_GID} --create-home --shell /bin/bash ${USERNAME} \

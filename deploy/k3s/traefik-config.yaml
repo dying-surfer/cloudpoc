@@ -1,0 +1,16 @@
+# Einstellungen für das Traefik, das k3s mitbringt (k3s installiert es per Helm-Chart).
+# Über eine HelmChartConfig mit gleichem Namen überschreibt man dessen Values;
+# der Helm-Controller von k3s rollt Traefik danach neu aus.
+#   kubectl apply -f deploy/k3s/traefik-config.yaml
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    logs:
+      access:
+        # Eine Zeile pro Request nach stdout: Status, Dauer und welcher Pod (ServiceURL)
+        # geantwortet hat. Standardmäßig aus.
+        enabled: true

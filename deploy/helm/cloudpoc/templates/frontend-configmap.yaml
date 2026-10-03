@@ -1,0 +1,10 @@
+# Runtime-Config der Angular-App, entspricht deploy/compose/config.json
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cloudpoc.fullname" . }}-frontend
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {{- .Values.frontend.config | toPrettyJson | nindent 4 }}

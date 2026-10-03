@@ -1,4 +1,4 @@
 # Konfiguration für actionlint (Workflows prüfen, siehe CLAUDE.md)
 self-hosted-runner:
-  # Label des Runners in der VM (docs/vm.md)
-  labels: [vm]
+  # Labels der Runner: Compose-VM (docs/vm.md) und k3s-VM (docs/k8s.md, Abschnitt 11)
+  labels: [vm, k3s]

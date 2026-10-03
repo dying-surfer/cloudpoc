@@ -1,0 +1,9 @@
+# Werte für den Namespace cloudpoc-staging (k3s-VM). Eine Datei pro Namespace, der Dateiname
+# ist der Namespace: make k8s-deploy NS=cloudpoc-staging TAG=<SHA>
+# Hier steht nur, was von cloudpoc/values.yaml abweicht oder zur Umgebung gehört.
+# image.tag fehlt mit Absicht: Die Version kommt beim Deploy per TAG.
+
+frontend:
+  config:
+    environment: staging
+    banner: STAGING · k3s

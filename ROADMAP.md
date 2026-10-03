@@ -117,15 +117,19 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 überleben und ein Restore aus einem Dump gelingt.
 
 ### M7 – Kubernetes: Helm-Chart & k3s
-- [ ] Helm-Chart: Deployments, Services, Ingress, ConfigMap (`config.json`), Migrations-Job als
-      `pre-upgrade`-Hook, Probes, Resource-Limits, HPA + PDB (prod)
-- [ ] `values.db.mode`: `cnpg` (CloudNativePG; Staging mit 1 Instanz, Prod mit 3 Instanzen + Backup/PITR)
+- [x] Helm-Chart: Deployments, Services, Ingress, ConfigMap (`config.json`), Migrations-Job als
+      Hook (`post-install` + `pre-upgrade`), Probes, Resource-Limits, HPA + PDB (prod)
+- [x] Chart-Checks ohne Cluster: `make helm-check` (helm lint, kubeconform), Teil von `make test` und CI
+- [ ] `values.db.mode`: `cnpg` (CloudNativePG mit 1 Instanz, in Prod mit Backup/PITR; Anzahl als Value,
+      Replikas erst bei mehreren Nodes sinnvoll)
       oder `external` (Managed DB)
-- [ ] Stagings als Namespaces `staging-<name>`, optional Preview-Envs pro PR
-- [ ] Secrets mit SOPS (age)
+- [ ] Namespaces `<app>-<umgebung>` (`cloudpoc-staging`), weitere Stagings als `cloudpoc-staging-<name>`,
+      optional Preview-Envs pro PR
+- [x] Secrets mit SOPS (age): `deploy/secrets/<ns>/`, `make k8s-secrets`, `make secrets-check`
 - [ ] Deploy-Workflows um einen Helm-Pfad erweitern
 
 **Fertig, wenn:** Ein Rolling Update ohne Downtime läuft und die CNPG-Recovery in einen neuen Namespace funktioniert.
+Stand: Beim ersten Rolling-Update-Test gab es noch eine 502 und eine 504 (docs/k8s.md, Abschnitt 8).
 
 ### M8 – Azure
 - [ ] Terraform `infra/azure`: RG, AKS, Postgres Flexible Server (Staging B1ms, Prod HA),

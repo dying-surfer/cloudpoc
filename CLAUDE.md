@@ -32,6 +32,9 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Eingabe-DTOs nehmen Enums und Daten als **String** an und prüfen sie mit Constraints (`Choice`, `Date`);
     so meldet die API alle Fehler auf einmal. Umwandlung erst danach (`statusEnum()` usw.).
   - Checks: `make test` bzw. `cd backend && composer check` (cs, phpstan, phpunit gegen `app_test`).
+  - Migrationen **expand/contract**: Jede Migration muss zur vorherigen Code-Version passen (Rolling Update,
+    alter Code läuft kurz gegen das neue Schema). Kein Umbenennen/Löschen von Spalten und kein `NOT NULL` ohne
+    Default in einem Schritt; Regeln und Beispiel in `docs/k8s.md` (Abschnitt 8).
   - Factories, Stories, Fixtures liegen in `backend/fixtures/` (Namespace `App\Fixtures`, nur `autoload-dev`,
     Services nur in dev/test), damit ein `--no-dev`-Build sie nicht enthält. Nicht nach `src/` legen.
   - Demo-Daten: `make backend-fixtures`. Dev-Server: siehe `docs/dev.md` (Backend starten).
@@ -80,3 +83,31 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     Nie `pull_request` auf dem Self-hosted Runner (öffentliches Repo).
   - Backup auf der VM: `make db-dump DUMP_DIR=/srv/cloudpoc/dumps` (nicht im Checkout, den räumt der nächste Deploy);
     für `db-import` `BACKEND_IMAGE` auf das laufende Image setzen.
+- **M7** (Kubernetes: Helm-Chart & k3s): in Arbeit auf `m7-k8s`. Anleitung: `docs/k8s.md`.
+  - Namespaces heißen `<app>-<umgebung>` (`cloudpoc-staging`): Der Cluster ist für mehrere Apps gedacht. Ordner
+    unter `deploy/secrets/` und Werte-Datei unter `deploy/helm/values/` tragen denselben Namen.
+  - k3s-VM `192.168.122.51` (Single-Node, Traefik als Ingress), CNPG-Operator 1.30.1 (Chart 0.29.1).
+    `kubectl`/`helm` nur auf dem Host (kubeconfig per `KUBECONFIG`), nie im Devcontainer.
+  - Chart `deploy/helm/cloudpoc/`: `image.tag` Pflicht (Commit-SHA), `db.mode` `cnpg` | `external`,
+    Migrationen als Hook-Job `post-install,pre-upgrade`, `values-prod.yaml` (HPA, PDB).
+    Secrets `ghcr-pull` und `cloudpoc-backend` (APP_SECRET) per SOPS (age) in `deploy/secrets/<ns>/`, anwenden mit
+    `make k8s-secrets NS=cloudpoc-staging` (Host). Privater Schlüssel nur auf dem Host, nie im Devcontainer. Das DB-Passwort
+    erzeugt der CNPG-Operator (Secret `cloudpoc-db-app`), nicht im Repo.
+  - Prüfen: `make helm-check` (`deploy/helm/check.sh`, alle Werte-Varianten). Neue Varianten dort eintragen.
+    `make secrets-check` prüft, dass alles unter `deploy/secrets/` verschlüsselt ist.
+  - Upgrades von Hand mit `--reset-then-reuse-values`, nie `--reuse-values` (übernimmt neue Chart-Defaults nicht).
+  - Deploy: `make k8s-deploy NS=cloudpoc-staging TAG=<voller SHA>` (Host): `k8s-secrets`, dann `helm upgrade --install`
+    mit `deploy/helm/values/<NS>.yaml`, ohne reuse (alle Werte aus dem Repo). `TAG` hat im Makefile den
+    Default `local` (Image-Builds), das Target verlangt deshalb 40 Hex-Zeichen. Neue Namespaces: Werte-Datei anlegen.
+  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Deploy-Workflow.
+  - Nächstes: Deploy-Workflow (wie M6: Self-hosted Runner in der k3s-VM, User `runner`, Label `k3s`,
+    k3s-API bleibt von außen zu). Schritte: 1. `make k8s-deploy` plus Werte-Datei: fertig, vom Host getestet; 2a. ServiceAccount `deployer`
+    (`deploy/k3s/deployer-cloudpoc-staging.yaml`): fertig, vom Host getestet;
+    2b. VM: User `runner`, helm/sops, kubeconfig `/home/runner/.kube/cloudpoc-staging.yaml`, eigener age-Schlüssel
+    (zweiter Empfänger in `.sops.yaml`): fertig, getestet;
+    3. Runner `cloudpoc-k3s` registriert (Idle); 4. Workflow `deploy-k8s.yml` geschrieben, **erster Lauf steht aus**
+    (braucht die Datei und das Chart auf `main`, Images gibt es nur für `main`-Commits; Image-Check per GHCR-API
+    ungetestet); 5. Doku steht in docs/k8s.md, Abschnitte 10 und 11.
+    Vom User bestätigt: ServiceAccount `deployer` nur mit Rechten im Namespace `cloudpoc-staging` (statt Admin-kubeconfig
+    von k3s) und eigener age-Schlüssel für den Runner als zweiter Empfänger in `.sops.yaml` (statt Kopie des
+    User-Schlüssels).

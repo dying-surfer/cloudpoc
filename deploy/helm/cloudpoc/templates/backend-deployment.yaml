@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloudpoc.fullname" . }}-backend
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  # Mit HPA kein replicas: Sonst setzte jedes helm upgrade die Anzahl zurück, die der
+  # HPA gerade eingestellt hat.
+  {{- if not .Values.backend.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicas }}
+  {{- end }}
+  strategy:
+    {{- include "cloudpoc.strategy" . | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "backend") | nindent 8 }}
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      securityContext:
+        # User "app" aus dem Dockerfile
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: {{ include "cloudpoc.image" (dict "ctx" $ "component" "backend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            {{- include "cloudpoc.backendEnv" . | nindent 12 }}
+          # readyz prüft auch die DB: Ohne DB bekommt der Pod keinen Traffic, wird
+          # aber nicht neu gestartet. healthz prüft nur, ob PHP antwortet; schlägt
+          # das fehl, startet Kubernetes den Container neu.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          lifecycle:
+            {{- include "cloudpoc.lifecycle" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- include "cloudpoc.containerSecurityContext" . | nindent 12 }}
+            # Root-Dateisystem bleibt beschreibbar: Symfony schreibt zur Laufzeit in
+            # var/cache (beim Build vorgewärmt, ein leeres Volume würde das verdecken),
+            # Caddy in /data und /config. Der Code selbst gehört root und ist für "app"
+            # nur lesbar (siehe backend/Dockerfile).
+            readOnlyRootFilesystem: false

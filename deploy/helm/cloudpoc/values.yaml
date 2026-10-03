@@ -1,0 +1,83 @@
+# Standardwerte des Charts. Pro Umgebung überschreibt eine eigene values-Datei
+# (deploy/helm/values/<namespace>.yaml, siehe make k8s-deploy) oder --set nur das, was dort anders ist.
+
+image:
+  registry: ghcr.io/dying-surfer
+  # Pflicht: voller Commit-SHA aus der CI (build once, deploy many), z. B.
+  # --set image.tag=$(git rev-parse origin/main)
+  tag: ""
+  pullPolicy: IfNotPresent
+  # Die Pakete in GHCR sind privat: Name eines Secrets vom Typ
+  # kubernetes.io/dockerconfigjson im selben Namespace (Anlage: docs/k8s.md)
+  pullSecret: ghcr-pull
+
+# Rollout-Strategie beider Deployments (docs/k8s.md, Abschnitt 8):
+# - RollingUpdate: neue Pods starten, bevor alte gehen. Keine Downtime, aber alte und
+#   neue Version laufen kurz gleichzeitig (Migrationen nach expand/contract).
+# - Recreate: erst alle alten Pods beenden, dann die neuen starten. Kurz offline,
+#   dafür nie zwei Versionen gleichzeitig.
+strategy: RollingUpdate
+
+# Pause vor dem Beenden eines Pods: Traefik erfährt erst mit kurzer Verzögerung, dass
+# ein Pod wegfällt, und schickt ihm sonst noch Requests (502 beim Rollout)
+preStopSleepSeconds: 5
+
+frontend:
+  replicas: 1
+  # PodDisruptionBudget: Bei geplanten Störungen (Node-Wartung, kubectl drain) bleiben
+  # mindestens so viele Pods stehen. Nur mit replicas >= 2 sinnvoll, sonst blockiert
+  # er die Wartung ganz.
+  pdb:
+    enabled: false
+    minAvailable: 1
+  # Wird als /config.json ausgeliefert (Runtime-Config der Angular-App)
+  config:
+    environment: staging
+    banner: STAGING · k3s
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+ingress:
+  # k3s bringt Traefik als Ingress-Controller mit
+  className: traefik
+  # Leer = jeder Hostname. Mehrere Umgebungen im selben Cluster brauchen
+  # unterschiedliche Hosts, sonst kollidieren ihre Routen.
+  host: ""
+
+backend:
+  replicas: 1
+  pdb:
+    enabled: false
+    minAvailable: 1
+  # HorizontalPodAutoscaler: Anzahl der Pods nach CPU-Last (gemessen vom metrics-server,
+  # in Prozent der CPU-requests). Ersetzt replicas.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+  # Secret im Namespace mit dem Schlüssel APP_SECRET (Anlage: docs/k8s.md)
+  existingSecret: cloudpoc-backend
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+db:
+  # cnpg:     Postgres-Cluster per CloudNativePG-Operator, im selben Namespace
+  # external: fertige DB (z. B. Azure Flexible Server), DATABASE_URL aus einem Secret
+  mode: cnpg
+  cnpg:
+    # Mehr als 1 erst bei mehreren Nodes sinnvoll (Standbys auf anderen Maschinen)
+    instances: 1
+    image: ghcr.io/cloudnative-pg/postgresql:17
+    size: 1Gi
+  external:
+    # Secret mit dem Schlüssel DATABASE_URL (Doctrine-Format inkl. serverVersion)
+    existingSecret: ""

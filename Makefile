@@ -16,6 +16,11 @@ DEV_COMPOSE  = podman compose -f .devcontainer/compose.yaml
 # Unterdrückt Podmans Hinweis ">>>> Executing external compose provider ..."
 export PODMAN_COMPOSE_WARNING_LOGS = false
 
+# Checks laufen im Devcontainer: auf dem Host (podman vorhanden) per `exec` dorthin,
+# sonst direkt (im Devcontainer selbst). In CI (GitHub setzt CI=true) ist podman zwar
+# installiert, aber es gibt keinen Devcontainer: dort ebenfalls direkt.
+USE_DEVCONTAINER := $(if $(CI),,$(shell command -v podman 2>/dev/null))
+
 .PHONY: dev-up dev-shell dev-psql dev-down
 
 dev-up: ## Devcontainer bauen und starten
@@ -34,7 +39,7 @@ dev-down: ## Devcontainer stoppen und entfernen (DB-Inhalt ist danach weg)
 # Auf dem Host (mit podman) laufen die Befehle per `exec` im Devcontainer, sonst
 # (im Devcontainer selbst, später in CI) direkt im Ordner backend/.
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 BACKEND = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/backend workspace
 else
 BACKEND = cd backend &&
@@ -55,7 +60,7 @@ backend-check: ## Backend: Code-Style, PHPStan, PHPUnit (gegen die Test-DB)
 # --- Frontend (läuft im Devcontainer) ----------------------------------------
 # Gleiches Muster wie beim Backend, nur im Ordner frontend/.
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 FRONTEND = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/frontend workspace
 else
 FRONTEND = cd frontend &&
@@ -126,7 +131,7 @@ deploy: ## Images aus der Registry holen und Stack damit neu starten (VM)
 PLAYWRIGHT_VERSION := $(shell sed -n 's/.*"@playwright\/test": "\(.*\)".*/\1/p' e2e/package.json)
 PLAYWRIGHT_IMAGE   = mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 E2E = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/e2e workspace
 else
 E2E = cd e2e &&
@@ -196,7 +201,7 @@ db-dump-anon: ## Anonymisierten Dump der Stack-DB schreiben (für Dev/Staging)
 # --- Datenbank im Devcontainer -----------------------------------------------------
 # Auf dem Host per exec im workspace, im Devcontainer direkt (psql & Co. nutzen PGHOST usw.).
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 WORKSPACE = $(DEV_COMPOSE) exec -T -w /workspaces/cloudpoc workspace
 else
 WORKSPACE =
@@ -209,6 +214,46 @@ dev-db-import: ## Anonymisierten Dump in die Dev-DB einspielen (FILE=db/dumps/cl
 	$(WORKSPACE) pg_restore -d app --clean --if-exists --no-owner --no-acl --single-transaction --exit-on-error $(FILE)
 	$(BACKEND) php bin/console doctrine:migrations:migrate -n
 
+# --- Helm-Chart (deploy/helm/) --------------------------------------------------
+# Prüft ohne Cluster (lint + kubeconform), läuft wie die anderen Checks im
+# Devcontainer. helm und kubeconform bringt dessen Image mit.
+
+ifneq ($(USE_DEVCONTAINER),)
+HELM_CHECK = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc workspace deploy/helm/check.sh
+else
+HELM_CHECK = deploy/helm/check.sh
+endif
+
+.PHONY: helm-check
+
+helm-check: ## Helm-Chart prüfen: helm lint, kubeconform (alle Werte-Varianten)
+	@$(HELM_CHECK)
+
+# --- Kubernetes-Secrets (deploy/secrets/, mit sops verschlüsselt) ----------------
+# Ein Unterordner pro Namespace. Anwenden nur auf dem Host: braucht sops mit dem
+# privaten age-Schlüssel und kubectl mit KUBECONFIG (docs/k8s.md).
+
+.PHONY: secrets-check k8s-secrets k8s-deploy
+
+secrets-check: ## Prüfen, dass alle Secrets unter deploy/secrets/ verschlüsselt sind
+	@deploy/check-secrets.sh
+
+k8s-secrets: ## Secrets eines Namespace entschlüsseln und anwenden (Host, NS=cloudpoc-staging)
+	@test -n "$(NS)" || { echo "NS fehlt, z. B. make k8s-secrets NS=cloudpoc-staging" >&2; exit 1; }
+	@for f in deploy/secrets/$(NS)/*.sops.yaml; do \
+		sops -d "$$f" | kubectl apply -f - || exit 1; \
+	done
+
+# Alle Werte kommen aus dem Repo (Chart-Defaults + deploy/helm/values/<NS>.yaml), nichts
+# aus dem vorigen Release: deshalb weder --reuse-values noch --reset-then-reuse-values.
+k8s-deploy: ## Version in einen Namespace ausrollen: Secrets, dann helm upgrade (Host, NS=cloudpoc-staging TAG=<SHA>)
+	@test -n "$(NS)" || { echo "NS fehlt, z. B. make k8s-deploy NS=cloudpoc-staging TAG=<SHA>" >&2; exit 1; }
+	@echo "$(TAG)" | grep -Eq '^[0-9a-f]{40}$$' || { echo "TAG muss ein voller Commit-SHA sein (ist: $(TAG)), z. B. TAG=\$$(git rev-parse origin/main)" >&2; exit 1; }
+	@test -f deploy/helm/values/$(NS).yaml || { echo "deploy/helm/values/$(NS).yaml fehlt" >&2; exit 1; }
+	@$(MAKE) --no-print-directory k8s-secrets NS=$(NS)
+	helm upgrade --install cloudpoc deploy/helm/cloudpoc -n $(NS) \
+		-f deploy/helm/values/$(NS).yaml --set image.tag=$(TAG) --wait --timeout 5m
+
 # --- Alles ---------------------------------------------------------------------
 
-test: backend-check frontend-check e2e-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch)
+test: backend-check frontend-check e2e-check helm-check secrets-check ## Alle Checks und Tests (Backend, Frontend, Smoke-Tests statisch, Helm-Chart, Secrets)

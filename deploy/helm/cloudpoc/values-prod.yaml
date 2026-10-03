@@ -1,0 +1,18 @@
+# Prod: überschreibt nur, was sich von values.yaml unterscheidet.
+#   helm upgrade --install cloudpoc deploy/helm/cloudpoc -n prod \
+#     -f deploy/helm/cloudpoc/values-prod.yaml --set image.tag=<SHA>
+
+frontend:
+  replicas: 2
+  pdb:
+    enabled: true
+  config:
+    environment: prod
+    # null löscht den Schlüssel aus values.yaml: kein Banner in Prod
+    banner: null
+
+backend:
+  pdb:
+    enabled: true
+  autoscaling:
+    enabled: true

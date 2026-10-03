@@ -1,0 +1,22 @@
+{{- /*
+PodDisruptionBudget je Komponente (Erklärung in values.yaml). Wirkt nur bei
+geplanten Störungen (Node-Wartung), nicht beim Rolling Update und nicht bei Abstürzen.
+*/}}
+{{- range $component := list "frontend" "backend" }}
+{{- $values := index $.Values $component }}
+{{- if $values.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "cloudpoc.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "cloudpoc.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  minAvailable: {{ $values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" $component) | nindent 6 }}
+{{- end }}
+{{- end }}

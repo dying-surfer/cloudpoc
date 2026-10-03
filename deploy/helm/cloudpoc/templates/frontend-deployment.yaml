@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloudpoc.fullname" . }}-frontend
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  strategy:
+    {{- include "cloudpoc.strategy" . | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "frontend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "frontend") | nindent 8 }}
+      annotations:
+        # Ändert sich die config.json, ändert sich diese Prüfsumme und damit das
+        # Pod-Template: Kubernetes rollt die Pods neu aus. Ohne das sähen laufende
+        # Pods die neue Config nicht (per subPath eingehängte Dateien werden nicht
+        # aktualisiert).
+        checksum/config: {{ include (print $.Template.BasePath "/frontend-configmap.yaml") . | sha256sum }}
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.image.pullSecret }}
+      securityContext:
+        # nginx-unprivileged läuft als UID 101
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend
+          image: {{ include "cloudpoc.image" (dict "ctx" $ "component" "frontend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          # Statische Dateien: Läuft nginx, kann er ausliefern. config.json statt "/",
+          # weil "/" auch ohne gemountete Config 200 liefert.
+          readinessProbe:
+            httpGet:
+              path: /config.json
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /config.json
+              port: http
+            periodSeconds: 10
+          lifecycle:
+            {{- include "cloudpoc.lifecycle" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            {{- include "cloudpoc.containerSecurityContext" . | nindent 12 }}
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/nginx/html/config.json
+              subPath: config.json
+              readOnly: true
+            # Root-Dateisystem ist schreibgeschützt; nginx braucht /tmp für
+            # PID-Datei und Puffer-Verzeichnisse
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "cloudpoc.fullname" . }}-frontend
+        - name: tmp
+          emptyDir: {}

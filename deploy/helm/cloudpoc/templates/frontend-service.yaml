@@ -1,0 +1,17 @@
+# Stabile Adresse (DNS-Name und virtuelle IP) vor den Frontend-Pods, egal wie oft
+# sie neu gestartet werden. Nur im Cluster erreichbar, von außen kommt man über
+# den Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloudpoc.fullname" . }}-frontend
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  selector:
+    {{- include "cloudpoc.selectorLabels" (dict "ctx" $ "component" "frontend") | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
