@@ -1,0 +1,81 @@
+# Deploy nach Kubernetes: Rollt auf Knopfdruck eine beliebige Version per Helm in den
+# Namespace cloudpoc-staging des k3s-Clusters aus, über den Self-hosted Runner in der
+# k3s-VM (Einrichtung: docs/k8s.md, Abschnitt 11). Actions → Deploy (k3s) → Run workflow.
+#
+# Version = Commit-SHA, Branch oder Tag. Ausgerollt werden die Images mit dem Commit-SHA
+# als Tag (build once, deploy many). Die gibt es für jeden Commit, den die CI per Push
+# auf main gebaut hat.
+#
+# Absicherung (öffentliches Repo): workflow_dispatch dürfen nur User mit Schreibrecht
+# auslösen, PRs aus Forks nicht.
+name: Deploy (k3s)
+run-name: Deploy (k3s) ${{ inputs.ref }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Version (voller Commit-SHA, Branch oder Tag)
+        required: true
+        default: main
+
+# Deploys nacheinander, nie abbrechen (ein halber Deploy ist schlimmer als ein später)
+concurrency:
+  group: deploy-k3s-cloudpoc-staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: Deploy nach cloudpoc-staging
+    runs-on: [self-hosted, k3s]
+    timeout-minutes: 15
+    env:
+      NS: cloudpoc-staging
+      # Zugänge des Runners, liegen nur auf der VM: ServiceAccount deployer (darf nur
+      # in diesem Namespace etwas) und der eigene age-Schlüssel für die sops-Secrets
+      KUBECONFIG: /home/runner/.kube/cloudpoc-staging.yaml
+      SOPS_AGE_KEY_FILE: /home/runner/.config/sops/age/keys.txt
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      # Branch oder Tag auf den Commit-SHA auflösen, der ist der Image-Tag
+      - name: Version bestimmen
+        run: |
+          sha=$(git rev-parse HEAD)
+          echo "TAG=$sha" >> "$GITHUB_ENV"
+          echo "Version: $sha ($(git log -1 --format=%s))" >> "$GITHUB_STEP_SUMMARY"
+      # Vorab prüfen, sonst wartet helm fünf Minuten auf Pods im ImagePullBackOff.
+      # Auf der VM gibt es kein docker: Manifest direkt bei der Registry abfragen.
+      # GHCR nimmt das GITHUB_TOKEN base64-kodiert als Bearer-Token (gilt nur für diesen Lauf).
+      - name: Images vorhanden?
+        env:
+          REGISTRY_PATH: ${{ github.repository_owner }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bearer=$(printf '%s' "$GITHUB_TOKEN" | base64 -w0)
+          for name in cloudpoc-backend cloudpoc-frontend; do
+            curl -fsS -o /dev/null \
+              -H "Authorization: Bearer $bearer" \
+              -H "Accept: application/vnd.oci.image.index.v1+json" \
+              -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+              -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+              -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/$REGISTRY_PATH/$name/manifests/$TAG" || {
+              echo "::error::ghcr.io/$REGISTRY_PATH/$name:$TAG fehlt in GHCR. Nur Commits, die die CI auf main gebaut hat, haben Images."
+              exit 1
+            }
+          done
+      # Secrets anwenden, dann helm upgrade --wait; die Migrationen laufen als Hook-Job
+      - run: make k8s-deploy NS="$NS" TAG="$TAG"
+      # Über Traefik (Port 80 der VM), also derselbe Weg wie ein Request von außen
+      - name: Readiness prüfen
+        run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors http://localhost/readyz
+      - if: always()
+        run: kubectl get deployments,pods,jobs -n "$NS" -o wide
+      - if: always()
+        run: helm history cloudpoc -n "$NS" --max 5

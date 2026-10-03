@@ -979,3 +979,24 @@ ihn vom Runner der Compose-VM (`vm`): Jeder Workflow wählt per `runs-on` genau 
 
 Für die Absicherung gilt dasselbe wie dort (öffentliches Repo): Der Runner läuft nur für den
 Deploy-Workflow, nie bei `pull_request`.
+
+### Deploy auf Knopfdruck
+
+Workflow `.github/workflows/deploy-k8s.yml`. Auf GitHub: *Actions → Deploy (k3s) → Run workflow*, als
+Version einen Commit-SHA, Branch oder Tag angeben (Standard `main`). GitHub bietet den Workflow erst an,
+wenn die Datei auf `main` liegt.
+
+Was der Lauf auf dem Runner tut:
+
+1. Repo in der gewünschten Version auschecken und auf den Commit-SHA auflösen (das ist der Image-Tag).
+2. Prüfen, dass es beide Images mit diesem Tag in GHCR gibt. Sonst würde `helm` fünf Minuten auf Pods im
+   `ImagePullBackOff` warten. Images hat nur, was die CI auf `main` gebaut hat.
+3. `make k8s-deploy NS=cloudpoc-staging TAG=<SHA>` (Abschnitt 10), mit der kubeconfig des `deployer` und
+   dem age-Schlüssel des Runners.
+4. `/readyz` über Traefik abfragen, zum Schluss den Stand von Pods, Jobs und der Helm-History ausgeben.
+
+Chart, Werte-Datei und Secrets kommen aus **derselben Version** wie die Images: Ein Deploy eines alten
+SHA rollt auch das alte Chart und die alten Secrets aus. Ein Rollback ist damit ein Deploy des alten SHA
+(die Datenbank bleibt, wie sie ist: Migrationen laufen nicht rückwärts, siehe expand/contract in Abschnitt 8).
+
+Logs des Laufs stehen auf GitHub, die des Runners in der VM: `sudo journalctl -u 'actions.runner.*' -e`.
