@@ -16,6 +16,11 @@ DEV_COMPOSE  = podman compose -f .devcontainer/compose.yaml
 # Unterdrückt Podmans Hinweis ">>>> Executing external compose provider ..."
 export PODMAN_COMPOSE_WARNING_LOGS = false
 
+# Checks laufen im Devcontainer: auf dem Host (podman vorhanden) per `exec` dorthin,
+# sonst direkt (im Devcontainer selbst). In CI (GitHub setzt CI=true) ist podman zwar
+# installiert, aber es gibt keinen Devcontainer: dort ebenfalls direkt.
+USE_DEVCONTAINER := $(if $(CI),,$(shell command -v podman 2>/dev/null))
+
 .PHONY: dev-up dev-shell dev-psql dev-down
 
 dev-up: ## Devcontainer bauen und starten
@@ -34,7 +39,7 @@ dev-down: ## Devcontainer stoppen und entfernen (DB-Inhalt ist danach weg)
 # Auf dem Host (mit podman) laufen die Befehle per `exec` im Devcontainer, sonst
 # (im Devcontainer selbst, später in CI) direkt im Ordner backend/.
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 BACKEND = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/backend workspace
 else
 BACKEND = cd backend &&
@@ -55,7 +60,7 @@ backend-check: ## Backend: Code-Style, PHPStan, PHPUnit (gegen die Test-DB)
 # --- Frontend (läuft im Devcontainer) ----------------------------------------
 # Gleiches Muster wie beim Backend, nur im Ordner frontend/.
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 FRONTEND = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/frontend workspace
 else
 FRONTEND = cd frontend &&
@@ -126,7 +131,7 @@ deploy: ## Images aus der Registry holen und Stack damit neu starten (VM)
 PLAYWRIGHT_VERSION := $(shell sed -n 's/.*"@playwright\/test": "\(.*\)".*/\1/p' e2e/package.json)
 PLAYWRIGHT_IMAGE   = mcr.microsoft.com/playwright:v$(PLAYWRIGHT_VERSION)-noble
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 E2E = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc/e2e workspace
 else
 E2E = cd e2e &&
@@ -196,7 +201,7 @@ db-dump-anon: ## Anonymisierten Dump der Stack-DB schreiben (für Dev/Staging)
 # --- Datenbank im Devcontainer -----------------------------------------------------
 # Auf dem Host per exec im workspace, im Devcontainer direkt (psql & Co. nutzen PGHOST usw.).
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 WORKSPACE = $(DEV_COMPOSE) exec -T -w /workspaces/cloudpoc workspace
 else
 WORKSPACE =
@@ -213,7 +218,7 @@ dev-db-import: ## Anonymisierten Dump in die Dev-DB einspielen (FILE=db/dumps/cl
 # Prüft ohne Cluster (lint + kubeconform), läuft wie die anderen Checks im
 # Devcontainer. helm und kubeconform bringt dessen Image mit.
 
-ifneq ($(shell command -v podman 2>/dev/null),)
+ifneq ($(USE_DEVCONTAINER),)
 HELM_CHECK = $(DEV_COMPOSE) exec -w /workspaces/cloudpoc workspace deploy/helm/check.sh
 else
 HELM_CHECK = deploy/helm/check.sh
