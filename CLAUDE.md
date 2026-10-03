@@ -83,7 +83,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     Nie `pull_request` auf dem Self-hosted Runner (öffentliches Repo).
   - Backup auf der VM: `make db-dump DUMP_DIR=/srv/cloudpoc/dumps` (nicht im Checkout, den räumt der nächste Deploy);
     für `db-import` `BACKEND_IMAGE` auf das laufende Image setzen.
-- **M7** (Kubernetes: Helm-Chart & k3s): in Arbeit auf `m7-k8s`. Anleitung: `docs/k8s.md`.
+- **M7** (Kubernetes: Helm-Chart & k3s): fertig, in `main` gemergt (per PR auf GitHub). Anleitung: `docs/k8s.md`.
   - Namespaces heißen `<app>-<umgebung>` (`cloudpoc-staging`): Der Cluster ist für mehrere Apps gedacht. Ordner
     unter `deploy/secrets/` und Werte-Datei unter `deploy/helm/values/` tragen denselben Namen.
   - k3s-VM `192.168.122.51` (Single-Node, Traefik als Ingress), CNPG-Operator 1.30.1 (Chart 0.29.1).
@@ -104,8 +104,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     Zugänge nur auf der VM: kubeconfig des ServiceAccount `deployer` (`deploy/k3s/deployer-cloudpoc-staging.yaml`,
     Rechte nur im Namespace) unter `/home/runner/.kube/cloudpoc-staging.yaml`, eigener age-Schlüssel als zweiter
     Empfänger in `.sops.yaml` (nach Änderungen dort: `sops updatekeys`). Erster Lauf erfolgreich (Oktober 2026).
-  - Zwischenstand von M7 ist per PR #15 in `main` (nötig, damit der Workflow startbar ist und Images existieren);
-    der Rest läuft weiter auf `m7-k8s`.
+  - Ein Zwischenstand von M7 kam vorab per PR #15 in `main` (nötig, damit der Workflow startbar ist und Images existieren).
   - `make`-Checks: `USE_DEVCONTAINER` im Makefile (podman vorhanden und nicht `CI`) entscheidet über exec in den
     Devcontainer; GitHub-Runner haben podman, aber keinen Devcontainer.
   - Rolling Update: `deploy/k3s/rollout-test.sh` (Host, Admin-kubeconfig) misst unter Last; sechs Läufe ohne Fehler.
@@ -122,4 +121,4 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     erster Lauf erfolgreich (Oktober 2026). Danach `kubectl delete namespace cloudpoc-restore`.
   - Stolperstein: Wird Backup bei einem bestehenden Cluster eingeschaltet, scheitert das sofortige Backup
     (`immediate: true`), dann eines von Hand auslösen. Ob es bei einem neuen Cluster klappt, ist ungetestet.
-  - Offen: Stagings als weitere Namespaces (`cloudpoc-staging-<name>`).
+  - Verschoben nach M9: Stagings als weitere Namespaces (`cloudpoc-staging-<name>`).

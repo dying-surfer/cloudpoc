@@ -123,14 +123,13 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 - [x] `values.db.mode`: `cnpg` (CloudNativePG mit 1 Instanz, in Prod mit Backup/PITR; Anzahl als Value,
       Replikas erst bei mehreren Nodes sinnvoll)
       oder `external` (Managed DB)
-- [ ] Namespaces `<app>-<umgebung>` (`cloudpoc-staging`), weitere Stagings als `cloudpoc-staging-<name>`,
-      optional Preview-Envs pro PR
+- [x] Namespaces `<app>-<umgebung>` (`cloudpoc-staging`). Weitere Stagings und Preview-Envs: verschoben nach M9
 - [x] Secrets mit SOPS (age): `deploy/secrets/<ns>/`, `make k8s-secrets`, `make secrets-check`
 - [x] Deploy-Workflow für Helm: `deploy-k8s.yml`, Runner in der k3s-VM, `make k8s-deploy`
 
 **Fertig, wenn:** Ein Rolling Update ohne Downtime läuft und die CNPG-Recovery in einen neuen Namespace funktioniert.
 Stand: Rolling Update ohne Fehler gemessen (`deploy/k3s/rollout-test.sh`, sechs Läufe; docs/k8s.md, Abschnitt 8).
-Offen ist die CNPG-Recovery.
+Recovery auf einen Zeitpunkt in einen neuen Namespace erfolgreich (`deploy/k3s/recovery-test.sh`; docs/k8s.md, Abschnitt 12).
 
 ### M8 – Azure
 - [ ] Terraform `infra/azure`: RG, AKS, Postgres Flexible Server (Staging B1ms, Prod HA),
@@ -150,6 +149,9 @@ Offen ist die CNPG-Recovery.
 - [ ] cosign-Signaturen, SBOM
 - [ ] Getrennte Umgebungen auf VM/Homeserver: Staging und Prod mit eigener DB, Beförderung desselben Images
       per Tag `v*` mit Freigabe (GitHub-Environment), mehrere benannte Stagings, `make staging-reset`
+- [ ] Kubernetes: weitere Stagings als Namespaces `cloudpoc-staging-<name>` (Werte-Datei, Secrets, eigener
+      Hostname am Ingress), optional Preview-Envs pro PR. Klärt nebenbei, ob das sofortige Backup
+      (`immediate: true`) bei einem neu angelegten Cluster funktioniert
 - [ ] Edge-Proxy (Traefik) mit TLS und Routing per Hostname (braucht eine Domain)
 - [ ] Offsite-Backup (restic → S3/B2), Podman Quadlets als Alternative zu Compose
 - [ ] Trivy-Scan in CI einschalten (Job `scan` in `ci.yml`, `if: false` entfernen). Stand der ersten Läufe
