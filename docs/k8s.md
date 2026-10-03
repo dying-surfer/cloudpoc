@@ -852,3 +852,80 @@ cannot <verb> resource "<ressource>" …` ab. Die Meldung nennt genau, was in `d
 
 **Token zurückziehen:** `kubectl delete secret deployer-token -n cloudpoc-staging`, dann die Datei erneut anwenden
 und die kubeconfig neu bauen. Das alte Token gilt sofort nicht mehr.
+
+### User und Werkzeuge in der VM
+
+In der k3s-VM als `admin`. Der Runner läuft wie auf der Compose-VM als eigener User `runner`, ohne `sudo`
+und hier auch ohne weitere Gruppen. Die Admin-kubeconfig `/etc/rancher/k3s/k3s.yaml` gehört root und ist
+für ihn nicht lesbar:
+
+```bash
+sudo useradd --create-home --shell /bin/bash runner
+sudo apt-get install -y git make age libicu76
+```
+
+`git` und `make` braucht der Workflow, `age` liefert `age-keygen`, `libicu76` braucht der Runner selbst.
+`kubectl` ist schon da (Link auf k3s). `helm` und `sops` gibt es nicht in Debian, also die Binaries in
+denselben Versionen wie auf dem Host und in der CI, jeweils mit Prüfsumme:
+
+```bash
+cd /tmp
+HELM_VERSION=4.3.0
+curl -fsSLO https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz
+curl -fsSL https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz.sha256sum | sha256sum -c -
+sudo tar xzf helm-v${HELM_VERSION}-linux-amd64.tar.gz --strip-components=1 -C /usr/local/bin linux-amd64/helm
+
+SOPS_VERSION=3.13.3
+curl -fsSLO https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops_${SOPS_VERSION}_amd64.deb
+curl -fsSL https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.checksums.txt \
+  | grep " sops_${SOPS_VERSION}_amd64.deb$" | sha256sum -c -
+sudo apt-get install -y ./sops_${SOPS_VERSION}_amd64.deb
+
+helm version --short && sops --version
+```
+
+Beide `sha256sum -c` müssen `OK` melden, sonst nicht installieren.
+
+### kubeconfig des `deployer` auf die VM
+
+Dieselbe Datei wie auf dem Host, nur mit `127.0.0.1` als Adresse (der Runner spricht die API lokal an).
+Auf dem **Host**:
+
+```bash
+sed 's/192.168.122.51/127.0.0.1/' ~/.kube/cloudpoc-k3s-deployer.yaml \
+  | ssh admin@192.168.122.51 'umask 077 && cat > deployer.yaml'
+```
+
+In der **VM** als `admin` an ihren Platz legen und die Kopie löschen:
+
+```bash
+sudo install -d -o runner -g runner -m 700 /home/runner/.kube
+sudo install -o runner -g runner -m 600 deployer.yaml /home/runner/.kube/cloudpoc-staging.yaml
+rm deployer.yaml
+
+sudo -iu runner env KUBECONFIG=/home/runner/.kube/cloudpoc-staging.yaml kubectl get pods   # geht
+sudo -iu runner env KUBECONFIG=/home/runner/.kube/cloudpoc-staging.yaml kubectl get nodes  # Forbidden
+sudo -iu runner kubectl get pods    # Fehler: ohne KUBECONFIG will k3s' kubectl die Admin-Datei lesen
+```
+
+Die Datei heißt bewusst nicht `~/.kube/config`: Der Workflow setzt `KUBECONFIG` ausdrücklich, dann ist
+im Workflow sichtbar, mit welchem Zugang er arbeitet.
+
+### age-Schlüssel für den Runner
+
+Der Runner muss die Secrets entschlüsseln (`make k8s-secrets`). Er bekommt dafür einen **eigenen**
+Schlüssel, der als zweiter Empfänger in `.sops.yaml` steht. sops verschlüsselt den Datenschlüssel jeder
+Datei dann einmal pro Empfänger (Abschnitt 9): Jeder der beiden privaten Schlüssel öffnet sie.
+
+In der **VM**:
+
+```bash
+sudo -iu runner
+mkdir -p ~/.config/sops/age
+age-keygen -o ~/.config/sops/age/keys.txt      # gibt "Public key: age1…" aus
+chmod 600 ~/.config/sops/age/keys.txt
+exit
+```
+
+Der private Schlüssel bleibt auf der VM und kommt in keinen Passwortmanager: Geht er verloren, erzeugt
+man einen neuen. Der öffentliche (`age1…`) kommt in `.sops.yaml`, als zweiter Eintrag unter `age:`.
