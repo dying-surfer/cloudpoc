@@ -108,4 +108,6 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     der Rest läuft weiter auf `m7-k8s`.
   - `make`-Checks: `USE_DEVCONTAINER` im Makefile (podman vorhanden und nicht `CI`) entscheidet über exec in den
     Devcontainer; GitHub-Runner haben podman, aber keinen Devcontainer.
-  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Stagings als weitere Namespaces.
+  - Rolling Update: `deploy/k3s/rollout-test.sh` (Host, Admin-kubeconfig) misst unter Last; sechs Läufe ohne Fehler.
+    Die 502/504 aus einem früheren Handtest traten nicht wieder auf, Ursache ungeklärt (docs/k8s.md, Abschnitt 8).
+  - Offen: Backup/PITR samt Recovery in einen neuen Namespace (Fertig-Kriterium), Stagings als weitere Namespaces.

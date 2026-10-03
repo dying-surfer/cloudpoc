@@ -594,10 +594,15 @@ Ein hängender hält die anderen nicht auf. Ausgabe:
 
 Zum Zuschauen in einem zweiten Terminal: `kubectl get pods -n cloudpoc-staging -w`.
 
-**Stand Oktober 2026: noch offen.** Der erste Test mit 2 Replikas ergab 32 × 200, 1 × 502 und
-1 × 504 (rund 30 s Wartezeit). Verdacht: Traefik schickt noch Requests an Pods, die schon
-beendet werden. Die Access-Logs unten sind eingeschaltet, um das zu belegen; ausgewertet ist es
-noch nicht.
+**Ergebnis (Oktober 2026):** Sechs Läufe mit je 2 Replikas, alle ohne Fehler. Im ersten waren es
+265 Requests, alle 200, die anderen fünf liefen direkt hintereinander ebenfalls nur mit 200 durch
+(Zahlen nicht notiert, bei 10 Requests/s jeweils in derselben Größenordnung).
+
+Nicht geklärt ist ein früherer Test von Hand (einfache `curl`-Schleife, ein Request nach dem anderen):
+32 × 200, 1 × 502 und 1 × 504 nach rund 30 s Wartezeit. Der Verdacht war, dass Traefik noch Requests an
+Pods schickt, die schon beendet werden. Belegt ist das nicht: Die Access-Logs wurden erst danach eingeschaltet
+und nie dazu ausgewertet, und der Fehler trat seither nicht wieder auf. Tritt er erneut auf, liefert das Skript die Zuordnung
+zum Pod gleich mit.
 
 **Gegenprobe** (zeigt, wofür die Einstellungen da sind): dasselbe mit
 `--set preStopSleepSeconds=0` (vereinzelt 502) oder `--set strategy=Recreate` (eine Lücke mit
