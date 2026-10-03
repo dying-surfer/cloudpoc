@@ -126,7 +126,7 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 - [ ] Namespaces `<app>-<umgebung>` (`cloudpoc-staging`), weitere Stagings als `cloudpoc-staging-<name>`,
       optional Preview-Envs pro PR
 - [x] Secrets mit SOPS (age): `deploy/secrets/<ns>/`, `make k8s-secrets`, `make secrets-check`
-- [ ] Deploy-Workflows um einen Helm-Pfad erweitern
+- [x] Deploy-Workflow für Helm: `deploy-k8s.yml`, Runner in der k3s-VM, `make k8s-deploy`
 
 **Fertig, wenn:** Ein Rolling Update ohne Downtime läuft und die CNPG-Recovery in einen neuen Namespace funktioniert.
 Stand: Beim ersten Rolling-Update-Test gab es noch eine 502 und eine 504 (docs/k8s.md, Abschnitt 8).

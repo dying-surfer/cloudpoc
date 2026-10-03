@@ -99,15 +99,13 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Deploy: `make k8s-deploy NS=cloudpoc-staging TAG=<voller SHA>` (Host): `k8s-secrets`, dann `helm upgrade --install`
     mit `deploy/helm/values/<NS>.yaml`, ohne reuse (alle Werte aus dem Repo). `TAG` hat im Makefile den
     Default `local` (Image-Builds), das Target verlangt deshalb 40 Hex-Zeichen. Neue Namespaces: Werte-Datei anlegen.
-  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Deploy-Workflow.
-  - Nächstes: Deploy-Workflow (wie M6: Self-hosted Runner in der k3s-VM, User `runner`, Label `k3s`,
-    k3s-API bleibt von außen zu). Schritte: 1. `make k8s-deploy` plus Werte-Datei: fertig, vom Host getestet; 2a. ServiceAccount `deployer`
-    (`deploy/k3s/deployer-cloudpoc-staging.yaml`): fertig, vom Host getestet;
-    2b. VM: User `runner`, helm/sops, kubeconfig `/home/runner/.kube/cloudpoc-staging.yaml`, eigener age-Schlüssel
-    (zweiter Empfänger in `.sops.yaml`): fertig, getestet;
-    3. Runner `cloudpoc-k3s` registriert (Idle); 4. Workflow `deploy-k8s.yml` geschrieben, **erster Lauf steht aus**
-    (braucht die Datei und das Chart auf `main`, Images gibt es nur für `main`-Commits; Image-Check per GHCR-API
-    ungetestet); 5. Doku steht in docs/k8s.md, Abschnitte 10 und 11.
-    Vom User bestätigt: ServiceAccount `deployer` nur mit Rechten im Namespace `cloudpoc-staging` (statt Admin-kubeconfig
-    von k3s) und eigener age-Schlüssel für den Runner als zweiter Empfänger in `.sops.yaml` (statt Kopie des
-    User-Schlüssels).
+  - Deploy-Workflow `.github/workflows/deploy-k8s.yml` (`workflow_dispatch`, wie M6): Self-hosted Runner
+    `cloudpoc-k3s` in der k3s-VM (User `runner`, Label `k3s`, k3s-API bleibt von außen zu), ruft `make k8s-deploy`.
+    Zugänge nur auf der VM: kubeconfig des ServiceAccount `deployer` (`deploy/k3s/deployer-cloudpoc-staging.yaml`,
+    Rechte nur im Namespace) unter `/home/runner/.kube/cloudpoc-staging.yaml`, eigener age-Schlüssel als zweiter
+    Empfänger in `.sops.yaml` (nach Änderungen dort: `sops updatekeys`). Erster Lauf erfolgreich (Oktober 2026).
+  - Zwischenstand von M7 ist per PR #15 in `main` (nötig, damit der Workflow startbar ist und Images existieren);
+    der Rest läuft weiter auf `m7-k8s`.
+  - `make`-Checks: `USE_DEVCONTAINER` im Makefile (podman vorhanden und nicht `CI`) entscheidet über exec in den
+    Devcontainer; GitHub-Runner haben podman, aber keinen Devcontainer.
+  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Stagings als weitere Namespaces.
