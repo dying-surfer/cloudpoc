@@ -576,27 +576,23 @@ helm upgrade cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging --reset-then-reus
 kubectl get pods,pdb,hpa -n cloudpoc-staging              # je 2 Frontend- und Backend-Pods
 ```
 
-In einem zweiten Terminal Requests im Dauerlauf, jeder Statuscode eine Zeile:
+Dann das Testskript, mit der Admin-kubeconfig (es liest auch die Traefik-Logs in `kube-system`):
 
 ```bash
-while true; do curl -s -o /dev/null -w '%{http_code}\n' http://192.168.122.51/api/tickets; sleep 0.1; done \
-  | tee ~/rollout-codes.txt
+deploy/k3s/rollout-test.sh                       # Namespace cloudpoc-staging, http://192.168.122.51/api/tickets
 ```
 
-Im ersten Terminal ein Update auslösen. `rollout restart` tauscht alle Pods aus wie bei einem
-neuen Image, ohne dass es eines braucht:
+Es schickt 10 Requests pro Sekunde, löst währenddessen `kubectl rollout restart deployment` aus
+(tauscht alle Pods aus wie bei einem neuen Image, ohne dass es eines braucht), wartet auf das Ende des
+Rollouts und misst noch 15 Sekunden weiter, bis die alten Pods beendet sind. Jeder Request läuft für sich:
+Ein hängender hält die anderen nicht auf. Ausgabe:
 
-```bash
-kubectl rollout restart deployment -n cloudpoc-staging
-kubectl rollout status deployment/cloudpoc-backend -n cloudpoc-staging
-kubectl get pods -n cloudpoc-staging -w                   # alte gehen erst, wenn neue ready sind (Strg+C)
-```
+- Pods mit IP vorher und nachher,
+- Anzahl je Statuscode (Ziel: nur 200),
+- für jeden anderen Request Startzeit und Dauer, dazu die Zeilen aus dem Traefik-Access-Log (an welchen
+  Pod ging er?) und die Pod-Events (wann wurde welcher Pod beendet?). Alle Zeiten in UTC.
 
-Dann die Schleife mit Strg+C beenden und auswerten:
-
-```bash
-sort ~/rollout-codes.txt | uniq -c               # nur 200
-```
+Zum Zuschauen in einem zweiten Terminal: `kubectl get pods -n cloudpoc-staging -w`.
 
 **Stand Oktober 2026: noch offen.** Der erste Test mit 2 Replikas ergab 32 × 200, 1 × 502 und
 1 × 504 (rund 30 s Wartezeit). Verdacht: Traefik schickt noch Requests an Pods, die schon
