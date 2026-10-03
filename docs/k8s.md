@@ -929,3 +929,26 @@ exit
 
 Der private Schlüssel bleibt auf der VM und kommt in keinen Passwortmanager: Geht er verloren, erzeugt
 man einen neuen. Der öffentliche (`age1…`) kommt in `.sops.yaml`, als zweiter Eintrag unter `age:`.
+
+Auf dem **Host** im Repo die vorhandenen Dateien für beide Empfänger neu verschlüsseln. `updatekeys`
+vergleicht die Empfänger in der Datei mit `.sops.yaml`, zeigt die Änderung und verschlüsselt nur den
+Datenschlüssel neu, die Werte selbst bleiben unverändert:
+
+```bash
+for f in deploy/secrets/cloudpoc-staging/*.sops.yaml; do sops updatekeys -y "$f"; done
+git diff --stat deploy/secrets/       # je Datei kommt ein Block "- recipient: age1…" dazu
+sops -d deploy/secrets/cloudpoc-staging/cloudpoc-backend.sops.yaml > /dev/null && echo ok   # dein Schlüssel geht noch
+```
+
+Prüfen, dass der Runner entschlüsseln kann: eine Datei zur VM kopieren und dort als `runner` öffnen
+(Ausgabe nach `/dev/null`, damit der Klartext nicht im Terminal steht):
+
+```bash
+scp deploy/secrets/cloudpoc-staging/cloudpoc-backend.sops.yaml admin@192.168.122.51:/tmp/test.sops.yaml
+ssh -t admin@192.168.122.51 \
+  'sudo -iu runner sops -d /tmp/test.sops.yaml > /dev/null && echo ok; rm /tmp/test.sops.yaml'
+```
+
+**Schlüssel des Runners zurückziehen:** Eintrag aus `.sops.yaml` löschen und `sops updatekeys` wie oben.
+Das sperrt ihn nur für künftige Stände: Alte Commits kann er weiter entschlüsseln, und die Werte kannte er
+schon. Nach einem Vorfall deshalb zusätzlich die Secrets selbst erneuern (Abschnitt 9, Werte ändern).
