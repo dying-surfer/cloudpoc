@@ -7,3 +7,11 @@ frontend:
   config:
     environment: staging
     banner: STAGING · k3s
+
+db:
+  cnpg:
+    backup:
+      enabled: true
+      # RustFS im Cluster (deploy/k3s/rustfs.yaml), Zugang im Secret cloudpoc-s3
+      bucket: cloudpoc-backups
+      endpointURL: http://rustfs.rustfs.svc:9000

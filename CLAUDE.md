@@ -83,7 +83,7 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     Nie `pull_request` auf dem Self-hosted Runner (öffentliches Repo).
   - Backup auf der VM: `make db-dump DUMP_DIR=/srv/cloudpoc/dumps` (nicht im Checkout, den räumt der nächste Deploy);
     für `db-import` `BACKEND_IMAGE` auf das laufende Image setzen.
-- **M7** (Kubernetes: Helm-Chart & k3s): in Arbeit auf `m7-k8s`. Anleitung: `docs/k8s.md`.
+- **M7** (Kubernetes: Helm-Chart & k3s): fertig, in `main` gemergt (per PR auf GitHub). Anleitung: `docs/k8s.md`.
   - Namespaces heißen `<app>-<umgebung>` (`cloudpoc-staging`): Der Cluster ist für mehrere Apps gedacht. Ordner
     unter `deploy/secrets/` und Werte-Datei unter `deploy/helm/values/` tragen denselben Namen.
   - k3s-VM `192.168.122.51` (Single-Node, Traefik als Ingress), CNPG-Operator 1.30.1 (Chart 0.29.1).
@@ -99,15 +99,26 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
   - Deploy: `make k8s-deploy NS=cloudpoc-staging TAG=<voller SHA>` (Host): `k8s-secrets`, dann `helm upgrade --install`
     mit `deploy/helm/values/<NS>.yaml`, ohne reuse (alle Werte aus dem Repo). `TAG` hat im Makefile den
     Default `local` (Image-Builds), das Target verlangt deshalb 40 Hex-Zeichen. Neue Namespaces: Werte-Datei anlegen.
-  - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Deploy-Workflow.
-  - Nächstes: Deploy-Workflow (wie M6: Self-hosted Runner in der k3s-VM, User `runner`, Label `k3s`,
-    k3s-API bleibt von außen zu). Schritte: 1. `make k8s-deploy` plus Werte-Datei: fertig, vom Host getestet; 2a. ServiceAccount `deployer`
-    (`deploy/k3s/deployer-cloudpoc-staging.yaml`): fertig, vom Host getestet;
-    2b. VM: User `runner`, helm/sops, kubeconfig `/home/runner/.kube/cloudpoc-staging.yaml`, eigener age-Schlüssel
-    (zweiter Empfänger in `.sops.yaml`): fertig, getestet;
-    3. Runner `cloudpoc-k3s` registriert (Idle); 4. Workflow `deploy-k8s.yml` geschrieben, **erster Lauf steht aus**
-    (braucht die Datei und das Chart auf `main`, Images gibt es nur für `main`-Commits; Image-Check per GHCR-API
-    ungetestet); 5. Doku steht in docs/k8s.md, Abschnitte 10 und 11.
-    Vom User bestätigt: ServiceAccount `deployer` nur mit Rechten im Namespace `cloudpoc-staging` (statt Admin-kubeconfig
-    von k3s) und eigener age-Schlüssel für den Runner als zweiter Empfänger in `.sops.yaml` (statt Kopie des
-    User-Schlüssels).
+  - Deploy-Workflow `.github/workflows/deploy-k8s.yml` (`workflow_dispatch`, wie M6): Self-hosted Runner
+    `cloudpoc-k3s` in der k3s-VM (User `runner`, Label `k3s`, k3s-API bleibt von außen zu), ruft `make k8s-deploy`.
+    Zugänge nur auf der VM: kubeconfig des ServiceAccount `deployer` (`deploy/k3s/deployer-cloudpoc-staging.yaml`,
+    Rechte nur im Namespace) unter `/home/runner/.kube/cloudpoc-staging.yaml`, eigener age-Schlüssel als zweiter
+    Empfänger in `.sops.yaml` (nach Änderungen dort: `sops updatekeys`). Erster Lauf erfolgreich (Oktober 2026).
+  - Ein Zwischenstand von M7 kam vorab per PR #15 in `main` (nötig, damit der Workflow startbar ist und Images existieren).
+  - `make`-Checks: `USE_DEVCONTAINER` im Makefile (podman vorhanden und nicht `CI`) entscheidet über exec in den
+    Devcontainer; GitHub-Runner haben podman, aber keinen Devcontainer.
+  - Rolling Update: `deploy/k3s/rollout-test.sh` (Host, Admin-kubeconfig) misst unter Last; sechs Läufe ohne Fehler.
+    Die 502/504 aus einem früheren Handtest traten nicht wieder auf, Ursache ungeklärt (docs/k8s.md, Abschnitt 8).
+  - Backup/PITR (docs/k8s.md, Abschnitt 12): Barman-Cloud-Plugin 0.15.1 (Chart 0.8.1) in `cnpg-system`, dafür
+    cert-manager v1.21.2; das eingebaute `barmanObjectStore` ist abgekündigt. S3-Speicher: RustFS im Namespace
+    `rustfs` (`deploy/k3s/rustfs.yaml`, nur Test-Ersatz, Backups liegen auf derselben VM), der Bucket
+    `cloudpoc-backups` entsteht per Job (das Plugin legt ihn nicht an). Root-Zugang in `deploy/secrets/rustfs/`
+    (nur Schlüssel des Users), je Namespace das Secret `cloudpoc-s3` mit denselben Werten.
+  - Chart: `db.cnpg.backup` (ObjectStore, `spec.plugins`, ScheduledBackup; Pfad `s3://<bucket>/<namespace>/`) und
+    `db.cnpg.recovery` (neuer Cluster aus dem Archiv von `sourceNamespace`, optional `targetTime`; nur beim ersten
+    Install, nie in den Quell-Namespace). In `cloudpoc-staging` ist Backup an.
+  - Recovery-Test: `deploy/k3s/recovery-test.sh` (Host, Admin-kubeconfig) stellt nach `cloudpoc-restore` wieder her,
+    erster Lauf erfolgreich (Oktober 2026). Danach `kubectl delete namespace cloudpoc-restore`.
+  - Stolperstein: Wird Backup bei einem bestehenden Cluster eingeschaltet, scheitert das sofortige Backup
+    (`immediate: true`), dann eines von Hand auslösen. Ob es bei einem neuen Cluster klappt, ist ungetestet.
+  - Verschoben nach M9: Stagings als weitere Namespaces (`cloudpoc-staging-<name>`).

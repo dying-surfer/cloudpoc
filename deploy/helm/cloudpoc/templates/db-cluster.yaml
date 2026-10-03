@@ -1,4 +1,7 @@
 {{- if eq .Values.db.mode "cnpg" }}
+{{- if and .Values.db.cnpg.recovery.enabled (eq .Values.db.cnpg.recovery.sourceNamespace .Release.Namespace) }}
+{{- fail "db.cnpg.recovery.sourceNamespace ist der eigene Namespace: Wiederhergestellt wird immer in einen neuen (der neue Cluster bräuchte sonst dasselbe Archiv wie der alte)" }}
+{{- end }}
 # Postgres per CloudNativePG: Der Operator (einmal pro Cluster installiert, siehe
 # docs/k8s.md) macht daraus Pod, Volume, Services und das Secret mit den Zugangsdaten.
 apiVersion: postgresql.cnpg.io/v1
@@ -15,13 +18,47 @@ metadata:
 spec:
   instances: {{ .Values.db.cnpg.instances }}
   imageName: {{ .Values.db.cnpg.image }}
-  # Legt DB "app" mit Owner "app" an, Passwort im Secret <cluster>-app
   bootstrap:
+    {{- if .Values.db.cnpg.recovery.enabled }}
+    # Neuer Cluster aus dem Backup einer anderen Umgebung (docs/k8s.md, Abschnitt 12):
+    # letztes Basis-Backup vor dem Zielzeitpunkt, danach WAL-Dateien bis dorthin.
+    # Wirkt nur beim Anlegen des Clusters, später liest der Operator das nicht mehr.
+    recovery:
+      source: source
+      # Der Operator setzt für "app" ein neues Passwort (Secret <cluster>-app)
+      database: app
+      owner: app
+      {{- with .Values.db.cnpg.recovery.targetTime }}
+      recoveryTarget:
+        targetTime: {{ . | quote }}
+      {{- end }}
+    {{- else }}
+    # Legt DB "app" mit Owner "app" an, Passwort im Secret <cluster>-app
     initdb:
       database: app
       owner: app
+    {{- end }}
+  {{- if .Values.db.cnpg.recovery.enabled }}
+  externalClusters:
+    - name: source
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: {{ include "cloudpoc.dbObjectStore" . }}-source
+          # Name des Clusters, von dem die Backups stammen (Ordner im Bucket)
+          serverName: {{ include "cloudpoc.dbCluster" . }}
+  {{- end }}
   storage:
     size: {{ .Values.db.cnpg.size }}
+  {{- if .Values.db.cnpg.backup.enabled }}
+  # Backup-Plugin einschalten (templates/db-backup.yaml): Der Operator setzt dafür einen
+  # zweiten Container in den Postgres-Pod. Ein- und Ausschalten startet den Pod neu.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ include "cloudpoc.dbObjectStore" . }}
+  {{- end }}
 {{- else if ne .Values.db.mode "external" }}
 {{- fail (printf "db.mode muss cnpg oder external sein, nicht %q" .Values.db.mode) }}
 {{- end }}

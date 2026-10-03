@@ -576,32 +576,33 @@ helm upgrade cloudpoc deploy/helm/cloudpoc -n cloudpoc-staging --reset-then-reus
 kubectl get pods,pdb,hpa -n cloudpoc-staging              # je 2 Frontend- und Backend-Pods
 ```
 
-In einem zweiten Terminal Requests im Dauerlauf, jeder Statuscode eine Zeile:
+Dann das Testskript, mit der Admin-kubeconfig (es liest auch die Traefik-Logs in `kube-system`):
 
 ```bash
-while true; do curl -s -o /dev/null -w '%{http_code}\n' http://192.168.122.51/api/tickets; sleep 0.1; done \
-  | tee ~/rollout-codes.txt
+deploy/k3s/rollout-test.sh                       # Namespace cloudpoc-staging, http://192.168.122.51/api/tickets
 ```
 
-Im ersten Terminal ein Update auslösen. `rollout restart` tauscht alle Pods aus wie bei einem
-neuen Image, ohne dass es eines braucht:
+Es schickt 10 Requests pro Sekunde, löst währenddessen `kubectl rollout restart deployment` aus
+(tauscht alle Pods aus wie bei einem neuen Image, ohne dass es eines braucht), wartet auf das Ende des
+Rollouts und misst noch 15 Sekunden weiter, bis die alten Pods beendet sind. Jeder Request läuft für sich:
+Ein hängender hält die anderen nicht auf. Ausgabe:
 
-```bash
-kubectl rollout restart deployment -n cloudpoc-staging
-kubectl rollout status deployment/cloudpoc-backend -n cloudpoc-staging
-kubectl get pods -n cloudpoc-staging -w                   # alte gehen erst, wenn neue ready sind (Strg+C)
-```
+- Pods mit IP vorher und nachher,
+- Anzahl je Statuscode (Ziel: nur 200),
+- für jeden anderen Request Startzeit und Dauer, dazu die Zeilen aus dem Traefik-Access-Log (an welchen
+  Pod ging er?) und die Pod-Events (wann wurde welcher Pod beendet?). Alle Zeiten in UTC.
 
-Dann die Schleife mit Strg+C beenden und auswerten:
+Zum Zuschauen in einem zweiten Terminal: `kubectl get pods -n cloudpoc-staging -w`.
 
-```bash
-sort ~/rollout-codes.txt | uniq -c               # nur 200
-```
+**Ergebnis (Oktober 2026):** Sechs Läufe mit je 2 Replikas, alle ohne Fehler. Im ersten waren es
+265 Requests, alle 200, die anderen fünf liefen direkt hintereinander ebenfalls nur mit 200 durch
+(Zahlen nicht notiert, bei 10 Requests/s jeweils in derselben Größenordnung).
 
-**Stand Oktober 2026: noch offen.** Der erste Test mit 2 Replikas ergab 32 × 200, 1 × 502 und
-1 × 504 (rund 30 s Wartezeit). Verdacht: Traefik schickt noch Requests an Pods, die schon
-beendet werden. Die Access-Logs unten sind eingeschaltet, um das zu belegen; ausgewertet ist es
-noch nicht.
+Nicht geklärt ist ein früherer Test von Hand (einfache `curl`-Schleife, ein Request nach dem anderen):
+32 × 200, 1 × 502 und 1 × 504 nach rund 30 s Wartezeit. Der Verdacht war, dass Traefik noch Requests an
+Pods schickt, die schon beendet werden. Belegt ist das nicht: Die Access-Logs wurden erst danach eingeschaltet
+und nie dazu ausgewertet, und der Fehler trat seither nicht wieder auf. Tritt er erneut auf, liefert das Skript die Zuordnung
+zum Pod gleich mit.
 
 **Gegenprobe** (zeigt, wofür die Einstellungen da sind): dasselbe mit
 `--set preStopSleepSeconds=0` (vereinzelt 502) oder `--set strategy=Recreate` (eine Lücke mit
@@ -640,6 +641,7 @@ Die vorletzte Angabe ist der Pod, an den Traefik den Request geschickt hat, die 
 | `cloudpoc-db-app`  | DB-Passwort (User `app`)     | CNPG-Operator, zufällig beim ersten Start | Operator (nicht im Repo)       |
 | `cloudpoc-backend` | `APP_SECRET` (Symfony)       | von uns erzeugt (`openssl rand`)          | SOPS, `deploy/secrets/<ns>/`   |
 | `ghcr-pull`        | Token zum Image-Pull (GHCR)  | GitHub, Token (classic) `read:packages`   | SOPS, `deploy/secrets/<ns>/`   |
+| `cloudpoc-s3`      | Zugang zum S3-Speicher für Backups | Schlüsselpaar des Speichers (Abschnitt 12) | SOPS, `deploy/secrets/<ns>/` |
 
 Das DB-Passwort braucht kein SOPS: Niemand außerhalb des Clusters muss es vorher kennen. Der
 Operator erzeugt es, legt damit die Rolle `app` an und schreibt es ins Secret. Das Backend-Deployment
@@ -810,7 +812,7 @@ Legt im Namespace `cloudpoc-staging` an: ServiceAccount, Role, RoleBinding (alle
 `deployer-token` mit einem Token ohne Ablaufdatum.
 
 Was die Role erlaubt: die Ressourcen des Charts verwalten (Deployments, Services, ConfigMaps, Ingress,
-Jobs, HPA, PDB, CNPG-Cluster), Secrets verwalten, Pods und ReplicaSets nur lesen.
+Jobs, HPA, PDB, CNPG-Cluster samt Backup-Zeitplan und ObjectStore), Secrets verwalten, Pods und ReplicaSets nur lesen.
 
 Was das **nicht** verhindert: Der `deployer` kann alle Secrets in `cloudpoc-staging` lesen (auch das DB-Passwort)
 und dort beliebige Pods starten. Das geht nicht enger, denn Helm speichert seine Releases selbst als
@@ -1000,3 +1002,279 @@ SHA rollt auch das alte Chart und die alten Secrets aus. Ein Rollback ist damit 
 (die Datenbank bleibt, wie sie ist: Migrationen laufen nicht rückwärts, siehe expand/contract in Abschnitt 8).
 
 Logs des Laufs stehen auf GitHub, die des Runners in der VM: `sudo journalctl -u 'actions.runner.*' -e`.
+
+## 12. Backup und Point-in-Time-Recovery
+
+### Was gesichert wird
+
+Ein Dump (`pg_dump`, wie in M6) ist ein Foto: Alles, was danach passiert, fehlt beim Restore. Für eine
+Wiederherstellung auf einen beliebigen Zeitpunkt (**Point-in-Time-Recovery**, PITR) sichert CNPG zwei Dinge:
+
+| Teil             | Inhalt                                                        | Wann                          |
+|------------------|---------------------------------------------------------------|-------------------------------|
+| **Basis-Backup** | vollständige Kopie des Datenverzeichnisses                    | nach Zeitplan, z. B. nachts   |
+| **WAL-Archiv**   | das Änderungsprotokoll von Postgres (Write-Ahead Log), Datei für Datei | laufend, spätestens alle 5 Minuten |
+
+Beim Wiederherstellen spielt Postgres das letzte Basis-Backup vor dem Zielzeitpunkt ein und danach die
+WAL-Dateien bis genau dorthin. Ohne WAL-Archiv gäbe es nur die Stände der Basis-Backups.
+
+Beides muss außerhalb des DB-Pods liegen. CNPG schreibt dafür in einen **Objektspeicher** (S3): Dateien
+werden per HTTP unter einem Namen in einem *Bucket* abgelegt, Zugang per Schlüsselpaar. In Produktion ist
+das ein Bucket bei einem Anbieter; hier läuft ein S3-kompatibler Server (RustFS) im Cluster, als Ersatz
+zum Testen. Die Backups liegen damit auf **derselben VM** wie die Datenbank: gut genug, um Backup und
+Recovery zu üben, aber kein Schutz gegen den Verlust der VM (Offsite-Backup: ROADMAP M9).
+
+### Die Bausteine
+
+| Baustein                | Aufgabe                                                                  | Namespace      |
+|-------------------------|--------------------------------------------------------------------------|----------------|
+| CNPG-Operator           | wie bisher (Abschnitt 4)                                                 | `cnpg-system`  |
+| **Barman-Cloud-Plugin** | macht Basis-Backups, archiviert WAL, holt beides beim Restore zurück     | `cnpg-system`  |
+| **cert-manager**        | stellt die TLS-Zertifikate aus, mit denen Operator und Plugin sich gegenseitig ausweisen | `cert-manager` |
+| S3-Server (RustFS)      | nimmt die Dateien entgegen                                               | eigener        |
+
+Barman ist das Backup-Werkzeug für Postgres, das dahinter arbeitet. Früher war es fest im Operator
+eingebaut (`spec.backup.barmanObjectStore`); seit CNPG 1.26 ist das abgekündigt, der Nachfolger ist das
+Plugin. Es läuft einmal als Deployment in `cnpg-system` und zusätzlich als **Sidecar** (zweiter Container)
+in jedem Postgres-Pod, der Backups machen soll.
+
+### cert-manager installieren
+
+Einmal pro Cluster, auf dem Host mit der Admin-kubeconfig:
+
+```bash
+export KUBECONFIG=~/.kube/cloudpoc-k3s.yaml
+helm upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --version v1.21.2 --set crds.enabled=true --wait
+```
+
+- `oci://…`: Das Chart liegt wie ein Image in einer Registry, ein `helm repo add` entfällt.
+- `crds.enabled=true`: Das Chart bringt die Ressourcentypen (`Certificate`, `Issuer`, …) nur auf Wunsch mit.
+
+Prüfen:
+
+```bash
+kubectl get pods -n cert-manager                    # cert-manager, -cainjector, -webhook: je 1/1 Running
+kubectl get crd | grep cert-manager.io              # certificates…, issuers…, clusterissuers…, …
+```
+
+Getestet mit v1.21.2 (Oktober 2026). cert-manager brauchen wir später ohnehin für TLS (ROADMAP M9).
+
+### Barman-Cloud-Plugin installieren
+
+Muss im selben Namespace wie der Operator liegen:
+
+```bash
+helm repo update cnpg
+helm upgrade --install plugin-barman-cloud cnpg/plugin-barman-cloud \
+  --namespace cnpg-system \
+  --version 0.8.1 --wait
+```
+
+Prüfen:
+
+```bash
+kubectl get pods -n cnpg-system                     # zusätzlich plugin-barman-cloud-…   1/1 Running
+kubectl get certificate -n cnpg-system              # barman-cloud-client, -server: READY True
+kubectl get crd | grep barmancloud                  # objectstores.barmancloud.cnpg.io
+```
+
+Getestet mit Chart 0.8.1 = Plugin v0.15.1 (Oktober 2026). An den bestehenden Datenbanken ändert sich
+dadurch noch nichts: Das Plugin wird erst aktiv, wenn ein `Cluster` es in `spec.plugins` nennt.
+
+### S3-Speicher: RustFS
+
+RustFS ist ein S3-kompatibler Server in einem einzelnen Programm. Er läuft als ein Pod mit Volume im
+eigenen Namespace `rustfs` (`deploy/k3s/rustfs.yaml`) und gehört wie der Operator zum Cluster, nicht zu
+einer Umgebung der App. Erreichbar ist er nur im Cluster, unter `http://rustfs.rustfs.svc:9000`.
+
+Zuerst der Root-Zugang als Secret. Der Access Key ist ein frei gewählter Name, der Secret Key ein
+Zufallswert (Vorgehen wie in Abschnitt 9, die Regel für den Ordner steht in `.sops.yaml`):
+
+```bash
+mkdir -p deploy/secrets/rustfs
+kubectl create secret generic rustfs -n rustfs \
+  --from-literal=RUSTFS_ACCESS_KEY=cloudpoc \
+  --from-literal=RUSTFS_SECRET_KEY="$(openssl rand -hex 24)" \
+  --dry-run=client -o yaml > deploy/secrets/rustfs/rustfs.sops.yaml
+sops -e -i deploy/secrets/rustfs/rustfs.sops.yaml
+make secrets-check
+```
+
+Dann Namespace, Secret und Server:
+
+```bash
+kubectl create namespace rustfs
+make k8s-secrets NS=rustfs
+kubectl apply -f deploy/k3s/rustfs.yaml
+kubectl rollout status statefulset/rustfs -n rustfs
+```
+
+Prüfen:
+
+```bash
+kubectl get pods,pvc,svc -n rustfs                  # rustfs-0 1/1 Running, PVC data-rustfs-0 Bound
+kubectl get jobs -n rustfs                           # rustfs-create-bucket Complete 1/1
+kubectl logs -n rustfs rustfs-0 | tail
+```
+
+**Hineinschauen:** RustFS bringt eine Web-Oberfläche auf Port 9001 mit. `port-forward` legt einen
+Tunnel vom Host zum Service, ohne ihn nach außen zu öffnen:
+
+```bash
+kubectl port-forward -n rustfs svc/rustfs 9001:9001   # http://localhost:9001, Strg+C beendet
+```
+
+Anmelden mit Access Key und Secret Key (`sops -d deploy/secrets/rustfs/rustfs.sops.yaml`, die Werte
+sind base64-kodiert). Zu sehen ist der leere Bucket `cloudpoc-backups`: Ihn legt der Job
+`rustfs-create-bucket` aus demselben Manifest an. Das Backup-Plugin erwartet den Bucket fertig; ohne
+ihn scheitert die WAL-Archivierung mit `NoSuchBucket` (die Plugin-Doku sagt, er entstehe beim ersten
+Schreiben, das stimmte hier nicht).
+
+Das StatefulSet ist bewusst schlicht: ein Pod, ein Volume, kein TLS, und die Datenbanken nutzen später
+den Root-Zugang. Bei einem echten Anbieter bekäme jede Umgebung einen eigenen Schlüssel, der nur an
+ihren Bucket darf.
+
+### Backup im Chart einschalten
+
+Das Chart legt mit `db.cnpg.backup.enabled: true` zwei weitere Objekte an (`templates/db-backup.yaml`)
+und ergänzt den `Cluster`:
+
+| Objekt                          | Aufgabe                                                                    |
+|---------------------------------|----------------------------------------------------------------------------|
+| `ObjectStore` `cloudpoc-db-backup` | Ziel: Bucket, Adresse, Zugang, Aufbewahrung (`retentionPolicy`, 14 Tage) |
+| `Cluster` → `spec.plugins`      | schaltet das Plugin ein; ab dann archiviert Postgres laufend seine WAL-Dateien |
+| `ScheduledBackup` `cloudpoc-db` | Basis-Backup nach Zeitplan (täglich 02:00 UTC) und eines sofort beim Anlegen |
+
+Die Dateien landen unter `s3://<bucket>/<namespace>/cloudpoc-db/`. Der Namespace im Pfad ist nötig, weil
+der Cluster in jeder Umgebung `cloudpoc-db` heißt; ohne ihn würden zwei Umgebungen ins selbe Archiv
+schreiben. Bucket und Adresse stehen pro Umgebung in `deploy/helm/values/<namespace>.yaml`.
+
+**1. Zugang als Secret.** Der Namespace braucht ein Secret `cloudpoc-s3` mit `ACCESS_KEY_ID` und
+`ACCESS_SECRET_KEY`. Hier sind es dieselben Werte wie der Root-Zugang von RustFS:
+
+```bash
+kubectl create secret generic cloudpoc-s3 -n cloudpoc-staging \
+  --from-literal=ACCESS_KEY_ID="$(sops -d --extract '["data"]["RUSTFS_ACCESS_KEY"]' deploy/secrets/rustfs/rustfs.sops.yaml | base64 -d)" \
+  --from-literal=ACCESS_SECRET_KEY="$(sops -d --extract '["data"]["RUSTFS_SECRET_KEY"]' deploy/secrets/rustfs/rustfs.sops.yaml | base64 -d)" \
+  --dry-run=client -o yaml > deploy/secrets/cloudpoc-staging/cloudpoc-s3.sops.yaml
+sops -e -i deploy/secrets/cloudpoc-staging/cloudpoc-s3.sops.yaml
+make secrets-check
+```
+
+**2. Rechte für den `deployer`.** Er darf jetzt auch `ScheduledBackup`, `Backup` und `ObjectStore`
+verwalten (sonst scheitert der Deploy-Workflow an den neuen Objekten):
+
+```bash
+kubectl apply -f deploy/k3s/deployer-cloudpoc-staging.yaml
+```
+
+**3. Ausrollen.** Mit dem Image, das gerade läuft, damit sich nur das Chart ändert:
+
+```bash
+make k8s-deploy NS=cloudpoc-staging TAG=$(helm get values cloudpoc -n cloudpoc-staging -o json | jq -r .image.tag)
+```
+
+Der Operator baut den Postgres-Pod dabei **neu** (er bekommt den Sidecar des Plugins). Mit nur einer
+Instanz ist die Datenbank dafür kurz weg, das Backend antwortet so lange mit Fehlern. Bei mehreren
+Instanzen würde der Operator reihum neu starten und vorher auf ein Standby umschalten.
+
+**4. Prüfen:**
+
+```bash
+kubectl get pods -n cloudpoc-staging                # cloudpoc-db-1 jetzt 2/2 (Postgres + Sidecar)
+kubectl get objectstore,scheduledbackup,backup -n cloudpoc-staging
+# backup …   PHASE completed  (das sofortige erste Basis-Backup, bei einem neuen Cluster)
+
+# Läuft die WAL-Archivierung? status True, reason ContinuousArchivingSuccess
+kubectl get cluster cloudpoc-db -n cloudpoc-staging \
+  -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")]}'; echo
+
+# Bei Problemen: Logs des Sidecars
+kubectl logs -n cloudpoc-staging cloudpoc-db-1 -c plugin-barman-cloud | tail
+```
+
+Wird das Backup bei einer **bestehenden** Datenbank eingeschaltet, scheitert das sofortige erste
+Backup mit `requested plugin is not available`: Es startet, während der Postgres-Pod gerade neu gebaut
+wird und der Sidecar noch fehlt. Ein fehlgeschlagenes Backup wird nicht wiederholt, das nächste käme
+erst nach Zeitplan. Deshalb einmal von Hand eines auslösen (siehe unten), sobald `ContinuousArchiving`
+auf `True` steht.
+
+In der Oberfläche von RustFS (`port-forward`, siehe oben) liegt jetzt der Bucket `cloudpoc-backups`,
+darin `cloudpoc-staging/cloudpoc-db/base/` (Basis-Backups) und `…/wals/` (WAL-Dateien).
+
+**Backup von Hand** (z. B. vor einer heiklen Migration):
+
+```bash
+kubectl create -n cloudpoc-staging -f - <<EOT
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  generateName: cloudpoc-db-manual-
+spec:
+  cluster:
+    name: cloudpoc-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+EOT
+kubectl get backups -n cloudpoc-staging -w          # bis PHASE completed (Strg+C)
+```
+
+### Wiederherstellen in einen neuen Namespace
+
+CNPG stellt nie in einen bestehenden Cluster zurück: Eine Recovery ist immer ein **neuer** Cluster, der
+beim Anlegen seine Daten aus dem Archiv holt statt leer zu starten. Das Original bleibt unberührt
+(gut zum Nachsehen, was sich geändert hat), und der neue Cluster beginnt eine eigene WAL-Geschichte.
+
+Im Chart ersetzt `db.cnpg.recovery` dafür `initdb` durch `recovery`:
+
+| Wert                       | Bedeutung                                                              |
+|----------------------------|------------------------------------------------------------------------|
+| `recovery.enabled`         | Cluster aus dem Backup aufbauen                                        |
+| `recovery.sourceNamespace` | Umgebung, aus der die Backups stammen (Ordner im Bucket)               |
+| `recovery.targetTime`      | Zielzeitpunkt, z. B. `2026-10-03T11:45:00Z`; leer = so aktuell wie möglich |
+
+Dazu legt das Chart einen zweiten `ObjectStore` `cloudpoc-db-backup-source` an, der auf das Archiv der
+Quelle zeigt. Der Operator spielt das letzte Basis-Backup **vor** dem Zielzeitpunkt ein, danach die
+WAL-Dateien bis dorthin, und setzt für den User `app` ein neues Passwort (Secret `cloudpoc-db-app`).
+Die Werte wirken nur beim ersten Install; in den Namespace der Quelle lässt sich nicht
+wiederherstellen (das Chart bricht ab).
+
+**Test:** `deploy/k3s/recovery-test.sh` (Host, Admin-kubeconfig) spielt das einmal durch:
+
+```bash
+deploy/k3s/recovery-test.sh                         # cloudpoc-staging → cloudpoc-restore
+```
+
+1. Schreibt in der Quelle eine Marke `vorher`, merkt sich die Zeit, schreibt eine Marke `nachher`.
+2. Schließt die laufende WAL-Datei ab (`pg_switch_wal`) und wartet, bis sie im Archiv liegt. Die
+   Recovery braucht WAL bis **hinter** den Zielzeitpunkt, sonst bricht Postgres ab.
+3. Legt den Ziel-Namespace an, kopiert die drei Secrets und rollt das Chart mit `recovery.*` aus
+   (gleiche Version und Werte wie die Quelle, eigener Hostname, ohne eigene Backups).
+4. Prüft: In der neuen DB steht nur `vorher`, und `/api/tickets` antwortet über den Ingress mit 200.
+
+Erster Lauf (Oktober 2026): erfolgreich, die Datenbank war nach rund 40 Sekunden wiederhergestellt
+(wenige Daten, ein Basis-Backup von wenigen Minuten zuvor). Bei einer großen Datenbank bestimmen die
+Größe des Basis-Backups und die Menge an WAL seit dem Backup die Dauer.
+
+Der Ziel-Namespace bleibt zum Ansehen stehen. Die App darin ist über den Hostnamen
+`restore.cloudpoc.test` erreichbar, den kein DNS kennt; `curl` schickt ihn als Header mit:
+
+```bash
+curl -H 'Host: restore.cloudpoc.test' http://192.168.122.51/api/tickets
+kubectl get cluster,pods,objectstore -n cloudpoc-restore
+kubectl delete namespace cloudpoc-restore           # aufräumen, samt Volume
+```
+
+**Im Ernstfall** (Daten kaputt, z. B. nach einer fehlerhaften Migration oder einem `DELETE` ohne `WHERE`):
+
+1. Zeitpunkt kurz **vor** dem Schaden bestimmen (Logs, `created_at` der letzten guten Daten).
+2. Neuen Namespace vorbereiten wie eine neue Umgebung: Werte-Datei `deploy/helm/values/<neu>.yaml`
+   mit `db.cnpg.recovery` und `backup.enabled: true`, Secrets unter `deploy/secrets/<neu>/`.
+3. `make k8s-deploy NS=<neu> TAG=<SHA der laufenden Version>`, Daten prüfen.
+4. Den Verkehr umstellen (Hostname am Ingress), die alte Umgebung erst danach abbauen.
+
+Zwischen Zielzeitpunkt und Umstellung geschriebene Daten sind in der neuen Umgebung nicht enthalten;
+sie liegen noch in der alten und müssten von Hand übertragen werden.

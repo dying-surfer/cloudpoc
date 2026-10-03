@@ -13,3 +13,8 @@ creation_rules:
     #   2. Deploy-Runner in der k3s-VM (User runner, nur dort)
     # Nach einer Änderung hier: sops updatekeys für jede Datei (docs/k8s.md, Abschnitt 11).
     age: age14d8ta7ch7n4jnx096fnvlmvqmvvzzaty7sf6vmrlcyq25h8439fs5328xk,age1wau5d4yyqjxhxlx3w6d0ygr5trfgww4z2p72n560l9tdyvmgscwq0h8q95
+  # Root-Zugang des S3-Servers RustFS (Namespace rustfs). Nur der User wendet ihn an
+  # (Admin-kubeconfig); der Deploy-Runner hat dort keine Rechte und ist kein Empfänger.
+  - path_regex: deploy/secrets/rustfs/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age14d8ta7ch7n4jnx096fnvlmvqmvvzzaty7sf6vmrlcyq25h8439fs5328xk

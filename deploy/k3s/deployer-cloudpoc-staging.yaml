@@ -38,6 +38,14 @@ rules:
   - apiGroups: [postgresql.cnpg.io]
     resources: [clusters]
     verbs: [get, list, watch, create, update, patch, delete]
+  # Backup (docs/k8s.md, Abschnitt 12): Zeitplan und Ziel der Backups legt das Chart an.
+  # backups: von Hand ein Backup auslösen und nachsehen, was gelaufen ist.
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [scheduledbackups, backups]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [get, list, watch, create, update, patch, delete]
   # Nur lesen: helm --wait beobachtet, ob ReplicaSets und Pods bereit sind,
   # und zum Nachsehen nach einem Deploy (kubectl get pods, kubectl logs).
   - apiGroups: [apps]

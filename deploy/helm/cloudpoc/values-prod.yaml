@@ -16,3 +16,9 @@ backend:
     enabled: true
   autoscaling:
     enabled: true
+
+db:
+  cnpg:
+    backup:
+      # Bucket und ggf. endpointURL gehören zur Umgebung (deploy/helm/values/<namespace>.yaml)
+      enabled: true
