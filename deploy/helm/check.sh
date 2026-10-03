@@ -29,6 +29,11 @@ check "Prod" -f "$CHART/values-prod.yaml"
 check "Recreate" --set strategy=Recreate
 check "Externe DB" --set db.mode=external --set db.external.existingSecret=cloudpoc-db
 
+# Die Werte-Dateien pro Namespace (make k8s-deploy)
+for f in values/*.yaml; do
+  check "Namespace $(basename "$f" .yaml)" -f "$f"
+done
+
 # Ohne image.tag muss das Chart abbrechen (kein Deploy ohne genaue Version)
 echo "== Ohne image.tag"
 if helm template cloudpoc "$CHART" > /dev/null 2>&1; then

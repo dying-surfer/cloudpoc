@@ -740,3 +740,33 @@ make k8s-secrets NS=staging
 Kein Neustart nötig: Das Pull-Secret liest der kubelet bei jedem Image-Pull neu. Danach den alten
 Token auf GitHub löschen. Ein abgelaufener Token fällt erst beim nächsten Pull auf (neuer Pod auf
 einem Node ohne das Image, neuer Tag), als `ImagePullBackOff`.
+
+## 10. Deploy mit einem Befehl
+
+Bisher: Secrets anwenden, dann `helm upgrade` mit den richtigen Optionen von Hand. Das fasst ein
+Target zusammen, das später auch der Deploy-Workflow aufruft (wie `make deploy` auf der Compose-VM):
+
+```bash
+git fetch
+make k8s-deploy NS=staging TAG=$(git rev-parse origin/main)
+```
+
+Was passiert:
+
+1. `make k8s-secrets NS=staging` (Abschnitt 9).
+2. `helm upgrade --install cloudpoc deploy/helm/cloudpoc -n staging -f deploy/helm/values/staging.yaml
+   --set image.tag=<TAG> --wait --timeout 5m`. Der Migrations-Job läuft wie gehabt als Hook (Abschnitt 7).
+
+**Werte pro Namespace:** `deploy/helm/values/<namespace>.yaml`, der Dateiname ist der Namespace. Fehlt die
+Datei, bricht das Target ab. `make helm-check` prüft jede dieser Dateien mit.
+
+**Kein `--reset-then-reuse-values`:** Bei den Handversuchen oben merkt sich Helm, was per `--set` gesetzt
+wurde, der Zustand steckt also im Cluster. Hier kommen alle Werte aus dem Repo (Chart-Defaults, Werte-Datei,
+`TAG`), jeder Deploy setzt sie neu. Folge: Ein von Hand gesetzter Wert (`--set strategy=Recreate`,
+`-f values-prod.yaml`) ist nach dem nächsten `make k8s-deploy` wieder weg. Dauerhaftes gehört in die Werte-Datei.
+
+**`TAG` muss ein voller Commit-SHA sein** (40 Zeichen). Ohne Angabe hätte `TAG` den Wert `local` aus den
+Image-Builds im selben Makefile, das Target lehnt das ab. Zu dem SHA muss die CI Images gebaut haben, sonst
+endet der Deploy nach 5 Minuten mit `ImagePullBackOff`.
+
+Der Namespace muss schon existieren (`kubectl create namespace …`), das Target legt ihn nicht an.

@@ -93,12 +93,15 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     erzeugt der CNPG-Operator (Secret `cloudpoc-db-app`), nicht im Repo.
   - Prüfen: `make helm-check` (`deploy/helm/check.sh`, alle Werte-Varianten). Neue Varianten dort eintragen.
     `make secrets-check` prüft, dass alles unter `deploy/secrets/` verschlüsselt ist.
-  - Upgrades mit `--reset-then-reuse-values`, nie `--reuse-values` (übernimmt neue Chart-Defaults nicht).
+  - Upgrades von Hand mit `--reset-then-reuse-values`, nie `--reuse-values` (übernimmt neue Chart-Defaults nicht).
+  - Deploy: `make k8s-deploy NS=staging TAG=<voller SHA>` (Host): `k8s-secrets`, dann `helm upgrade --install`
+    mit `deploy/helm/values/<NS>.yaml`, ohne reuse (alle Werte aus dem Repo). `TAG` hat im Makefile den
+    Default `local` (Image-Builds), das Target verlangt deshalb 40 Hex-Zeichen. Neue Namespaces: Werte-Datei anlegen.
   - Offen: 502/504 beim Rolling Update (docs/k8s.md, Abschnitt 8), Backup/PITR, Deploy-Workflow.
   - Nächstes: Deploy-Workflow (wie M6: Self-hosted Runner in der k3s-VM, User `runner`, Label `k3s`,
-    k3s-API bleibt von außen zu). Geplante Schritte: 1. `make k8s-deploy NS=staging TAG=<sha>` (k8s-secrets +
-    helm upgrade) plus Werte-Datei pro Namespace, erst vom Host testen; 2. VM: Werkzeuge (helm, sops),
-    ServiceAccount + kubeconfig, age-Schlüssel, `sops updatekeys`; 3. Runner registrieren; 4. Workflow
-    `deploy-k8s.yml` (`workflow_dispatch`); 5. Doku. Vorgeschlagen, **vom User noch nicht bestätigt**:
-    ServiceAccount `deployer` nur mit Rechten im Namespace `staging` (statt Admin-kubeconfig von k3s) und
-    eigener age-Schlüssel für den Runner als zweiter Empfänger in `.sops.yaml` (statt Kopie des User-Schlüssels).
+    k3s-API bleibt von außen zu). Schritte: 1. `make k8s-deploy` plus Werte-Datei: gebaut, **Test vom Host
+    steht aus**; 2. VM: Werkzeuge (helm, sops), ServiceAccount + kubeconfig, age-Schlüssel, `sops updatekeys`;
+    3. Runner registrieren; 4. Workflow `deploy-k8s.yml` (`workflow_dispatch`); 5. Doku.
+    Vom User bestätigt: ServiceAccount `deployer` nur mit Rechten im Namespace `staging` (statt Admin-kubeconfig
+    von k3s) und eigener age-Schlüssel für den Runner als zweiter Empfänger in `.sops.yaml` (statt Kopie des
+    User-Schlüssels).

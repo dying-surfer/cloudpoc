@@ -1,5 +1,5 @@
 # Standardwerte des Charts. Pro Umgebung überschreibt eine eigene values-Datei
-# (z. B. values-staging.yaml) oder --set nur das, was dort anders ist.
+# (deploy/helm/values/<namespace>.yaml, siehe make k8s-deploy) oder --set nur das, was dort anders ist.
 
 image:
   registry: ghcr.io/dying-surfer
