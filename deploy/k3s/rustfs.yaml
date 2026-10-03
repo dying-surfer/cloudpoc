@@ -1,0 +1,106 @@
+# S3-Speicher für die Postgres-Backups (docs/k8s.md, Abschnitt 12): RustFS als einzelner
+# Pod mit Volume. Ersatz für einen echten Bucket bei einem Anbieter, nur zum Testen:
+# Die Backups liegen damit auf derselben VM wie die Datenbank.
+# Anwenden mit der Admin-kubeconfig. Der Namespace und das Secret müssen vorher da sein:
+#   kubectl create namespace rustfs
+#   make k8s-secrets NS=rustfs
+#   kubectl apply -f deploy/k3s/rustfs.yaml
+---
+# Im Cluster erreichbar als http://rustfs.rustfs.svc:9000 (<service>.<namespace>.svc).
+# Kein Ingress: Von außen kommt niemand an den Speicher.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: rustfs
+  labels:
+    app.kubernetes.io/name: rustfs
+spec:
+  selector:
+    app.kubernetes.io/name: rustfs
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+    - name: console
+      port: 9001
+      targetPort: console
+---
+# StatefulSet statt Deployment: fester Pod-Name (rustfs-0) und ein eigenes Volume, das
+# beim Neustart wieder an denselben Pod kommt. Nie zwei Pods gleichzeitig am Volume.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rustfs
+  namespace: rustfs
+  labels:
+    app.kubernetes.io/name: rustfs
+spec:
+  serviceName: rustfs
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rustfs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rustfs
+    spec:
+      # Das Image läuft als User rustfs (10001); fsGroup macht Volumes für ihn schreibbar
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: rustfs
+          image: rustfs/rustfs:1.0.1
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          env:
+            - name: RUSTFS_VOLUMES
+              value: /data
+            # Leer = Logs nach stdout (kubectl logs) statt in Dateien unter /logs
+            - name: RUSTFS_OBS_LOG_DIRECTORY
+              value: ""
+          # Root-Zugang: RUSTFS_ACCESS_KEY und RUSTFS_SECRET_KEY (deploy/secrets/rustfs/)
+          envFrom:
+            - secretRef:
+                name: rustfs
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: s3
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: s3
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            # local-path setzt die Größe nicht durch, sie ist hier nur eine Angabe
+            storage: 5Gi

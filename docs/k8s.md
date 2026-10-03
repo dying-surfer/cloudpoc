@@ -1081,3 +1081,53 @@ kubectl get crd | grep barmancloud                  # objectstores.barmancloud.c
 
 Getestet mit Chart 0.8.1 = Plugin v0.15.1 (Oktober 2026). An den bestehenden Datenbanken ändert sich
 dadurch noch nichts: Das Plugin wird erst aktiv, wenn ein `Cluster` es in `spec.plugins` nennt.
+
+### S3-Speicher: RustFS
+
+RustFS ist ein S3-kompatibler Server in einem einzelnen Programm. Er läuft als ein Pod mit Volume im
+eigenen Namespace `rustfs` (`deploy/k3s/rustfs.yaml`) und gehört wie der Operator zum Cluster, nicht zu
+einer Umgebung der App. Erreichbar ist er nur im Cluster, unter `http://rustfs.rustfs.svc:9000`.
+
+Zuerst der Root-Zugang als Secret. Der Access Key ist ein frei gewählter Name, der Secret Key ein
+Zufallswert (Vorgehen wie in Abschnitt 9, die Regel für den Ordner steht in `.sops.yaml`):
+
+```bash
+mkdir -p deploy/secrets/rustfs
+kubectl create secret generic rustfs -n rustfs \
+  --from-literal=RUSTFS_ACCESS_KEY=cloudpoc \
+  --from-literal=RUSTFS_SECRET_KEY="$(openssl rand -hex 24)" \
+  --dry-run=client -o yaml > deploy/secrets/rustfs/rustfs.sops.yaml
+sops -e -i deploy/secrets/rustfs/rustfs.sops.yaml
+make secrets-check
+```
+
+Dann Namespace, Secret und Server:
+
+```bash
+kubectl create namespace rustfs
+make k8s-secrets NS=rustfs
+kubectl apply -f deploy/k3s/rustfs.yaml
+kubectl rollout status statefulset/rustfs -n rustfs
+```
+
+Prüfen:
+
+```bash
+kubectl get pods,pvc,svc -n rustfs                  # rustfs-0 1/1 Running, PVC data-rustfs-0 Bound
+kubectl logs -n rustfs rustfs-0 | tail
+```
+
+**Hineinschauen:** RustFS bringt eine Web-Oberfläche auf Port 9001 mit. `port-forward` legt einen
+Tunnel vom Host zum Service, ohne ihn nach außen zu öffnen:
+
+```bash
+kubectl port-forward -n rustfs svc/rustfs 9001:9001   # http://localhost:9001, Strg+C beendet
+```
+
+Anmelden mit Access Key und Secret Key (`sops -d deploy/secrets/rustfs/rustfs.sops.yaml`, die Werte
+sind base64-kodiert). Noch ist der Speicher leer; den Bucket legt das Backup-Plugin beim ersten
+Schreiben an.
+
+Das StatefulSet ist bewusst schlicht: ein Pod, ein Volume, kein TLS, und die Datenbanken nutzen später
+den Root-Zugang. Bei einem echten Anbieter bekäme jede Umgebung einen eigenen Schlüssel, der nur an
+ihren Bucket darf.
