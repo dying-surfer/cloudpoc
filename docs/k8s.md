@@ -1221,3 +1221,56 @@ spec:
 EOT
 kubectl get backups -n cloudpoc-staging -w          # bis PHASE completed (Strg+C)
 ```
+
+### Wiederherstellen in einen neuen Namespace
+
+CNPG stellt nie in einen bestehenden Cluster zurück: Eine Recovery ist immer ein **neuer** Cluster, der
+beim Anlegen seine Daten aus dem Archiv holt statt leer zu starten. Das Original bleibt unberührt
+(gut zum Nachsehen, was sich geändert hat), und der neue Cluster beginnt eine eigene WAL-Geschichte.
+
+Im Chart ersetzt `db.cnpg.recovery` dafür `initdb` durch `recovery`:
+
+| Wert                       | Bedeutung                                                              |
+|----------------------------|------------------------------------------------------------------------|
+| `recovery.enabled`         | Cluster aus dem Backup aufbauen                                        |
+| `recovery.sourceNamespace` | Umgebung, aus der die Backups stammen (Ordner im Bucket)               |
+| `recovery.targetTime`      | Zielzeitpunkt, z. B. `2026-10-03T11:45:00Z`; leer = so aktuell wie möglich |
+
+Dazu legt das Chart einen zweiten `ObjectStore` `cloudpoc-db-backup-source` an, der auf das Archiv der
+Quelle zeigt. Der Operator spielt das letzte Basis-Backup **vor** dem Zielzeitpunkt ein, danach die
+WAL-Dateien bis dorthin, und setzt für den User `app` ein neues Passwort (Secret `cloudpoc-db-app`).
+Die Werte wirken nur beim ersten Install; in den Namespace der Quelle lässt sich nicht
+wiederherstellen (das Chart bricht ab).
+
+**Test:** `deploy/k3s/recovery-test.sh` (Host, Admin-kubeconfig) spielt das einmal durch:
+
+```bash
+deploy/k3s/recovery-test.sh                         # cloudpoc-staging → cloudpoc-restore
+```
+
+1. Schreibt in der Quelle eine Marke `vorher`, merkt sich die Zeit, schreibt eine Marke `nachher`.
+2. Schließt die laufende WAL-Datei ab (`pg_switch_wal`) und wartet, bis sie im Archiv liegt. Die
+   Recovery braucht WAL bis **hinter** den Zielzeitpunkt, sonst bricht Postgres ab.
+3. Legt den Ziel-Namespace an, kopiert die drei Secrets und rollt das Chart mit `recovery.*` aus
+   (gleiche Version und Werte wie die Quelle, eigener Hostname, ohne eigene Backups).
+4. Prüft: In der neuen DB steht nur `vorher`, und `/api/tickets` antwortet über den Ingress mit 200.
+
+Der Ziel-Namespace bleibt zum Ansehen stehen. Die App darin ist über den Hostnamen
+`restore.cloudpoc.test` erreichbar, den kein DNS kennt; `curl` schickt ihn als Header mit:
+
+```bash
+curl -H 'Host: restore.cloudpoc.test' http://192.168.122.51/api/tickets
+kubectl get cluster,pods,objectstore -n cloudpoc-restore
+kubectl delete namespace cloudpoc-restore           # aufräumen, samt Volume
+```
+
+**Im Ernstfall** (Daten kaputt, z. B. nach einer fehlerhaften Migration oder einem `DELETE` ohne `WHERE`):
+
+1. Zeitpunkt kurz **vor** dem Schaden bestimmen (Logs, `created_at` der letzten guten Daten).
+2. Neuen Namespace vorbereiten wie eine neue Umgebung: Werte-Datei `deploy/helm/values/<neu>.yaml`
+   mit `db.cnpg.recovery` und `backup.enabled: true`, Secrets unter `deploy/secrets/<neu>/`.
+3. `make k8s-deploy NS=<neu> TAG=<SHA der laufenden Version>`, Daten prüfen.
+4. Den Verkehr umstellen (Hostname am Ingress), die alte Umgebung erst danach abbauen.
+
+Zwischen Zielzeitpunkt und Umstellung geschriebene Daten sind in der neuen Umgebung nicht enthalten;
+sie liegen noch in der alten und müssten von Hand übertragen werden.
