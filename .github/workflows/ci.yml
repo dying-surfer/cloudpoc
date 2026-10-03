@@ -132,7 +132,7 @@ jobs:
       # auf main zusätzlich :main. Das Label org.opencontainers.image.source
       # verknüpft das Paket in GHCR mit diesem Repo.
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/cloudpoc-${{ matrix.component }}
           tags: |
