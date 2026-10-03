@@ -120,7 +120,7 @@ Staging/Prod-Trennung, TLS und Offsite-Backups stehen in M9.
 - [x] Helm-Chart: Deployments, Services, Ingress, ConfigMap (`config.json`), Migrations-Job als
       Hook (`post-install` + `pre-upgrade`), Probes, Resource-Limits, HPA + PDB (prod)
 - [x] Chart-Checks ohne Cluster: `make helm-check` (helm lint, kubeconform), Teil von `make test` und CI
-- [ ] `values.db.mode`: `cnpg` (CloudNativePG mit 1 Instanz, in Prod mit Backup/PITR; Anzahl als Value,
+- [x] `values.db.mode`: `cnpg` (CloudNativePG mit 1 Instanz, in Prod mit Backup/PITR; Anzahl als Value,
       Replikas erst bei mehreren Nodes sinnvoll)
       oder `external` (Managed DB)
 - [ ] Namespaces `<app>-<umgebung>` (`cloudpoc-staging`), weitere Stagings als `cloudpoc-staging-<name>`,

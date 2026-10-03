@@ -110,4 +110,16 @@ Ziel und Meilensteine: siehe `ROADMAP.md`. Lokale Umgebung: siehe `docs/dev.md`.
     Devcontainer; GitHub-Runner haben podman, aber keinen Devcontainer.
   - Rolling Update: `deploy/k3s/rollout-test.sh` (Host, Admin-kubeconfig) misst unter Last; sechs Läufe ohne Fehler.
     Die 502/504 aus einem früheren Handtest traten nicht wieder auf, Ursache ungeklärt (docs/k8s.md, Abschnitt 8).
-  - Offen: Backup/PITR samt Recovery in einen neuen Namespace (Fertig-Kriterium), Stagings als weitere Namespaces.
+  - Backup/PITR (docs/k8s.md, Abschnitt 12): Barman-Cloud-Plugin 0.15.1 (Chart 0.8.1) in `cnpg-system`, dafür
+    cert-manager v1.21.2; das eingebaute `barmanObjectStore` ist abgekündigt. S3-Speicher: RustFS im Namespace
+    `rustfs` (`deploy/k3s/rustfs.yaml`, nur Test-Ersatz, Backups liegen auf derselben VM), der Bucket
+    `cloudpoc-backups` entsteht per Job (das Plugin legt ihn nicht an). Root-Zugang in `deploy/secrets/rustfs/`
+    (nur Schlüssel des Users), je Namespace das Secret `cloudpoc-s3` mit denselben Werten.
+  - Chart: `db.cnpg.backup` (ObjectStore, `spec.plugins`, ScheduledBackup; Pfad `s3://<bucket>/<namespace>/`) und
+    `db.cnpg.recovery` (neuer Cluster aus dem Archiv von `sourceNamespace`, optional `targetTime`; nur beim ersten
+    Install, nie in den Quell-Namespace). In `cloudpoc-staging` ist Backup an.
+  - Recovery-Test: `deploy/k3s/recovery-test.sh` (Host, Admin-kubeconfig) stellt nach `cloudpoc-restore` wieder her,
+    erster Lauf erfolgreich (Oktober 2026). Danach `kubectl delete namespace cloudpoc-restore`.
+  - Stolperstein: Wird Backup bei einem bestehenden Cluster eingeschaltet, scheitert das sofortige Backup
+    (`immediate: true`), dann eines von Hand auslösen. Ob es bei einem neuen Cluster klappt, ist ungetestet.
+  - Offen: Stagings als weitere Namespaces (`cloudpoc-staging-<name>`).

@@ -1255,6 +1255,10 @@ deploy/k3s/recovery-test.sh                         # cloudpoc-staging → cloud
    (gleiche Version und Werte wie die Quelle, eigener Hostname, ohne eigene Backups).
 4. Prüft: In der neuen DB steht nur `vorher`, und `/api/tickets` antwortet über den Ingress mit 200.
 
+Erster Lauf (Oktober 2026): erfolgreich, die Datenbank war nach rund 40 Sekunden wiederhergestellt
+(wenige Daten, ein Basis-Backup von wenigen Minuten zuvor). Bei einer großen Datenbank bestimmen die
+Größe des Basis-Backups und die Menge an WAL seit dem Backup die Dauer.
+
 Der Ziel-Namespace bleibt zum Ansehen stehen. Die App darin ist über den Hostnamen
 `restore.cloudpoc.test` erreichbar, den kein DNS kennt; `curl` schickt ihn als Header mit:
 
