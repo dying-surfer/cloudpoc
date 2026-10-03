@@ -952,3 +952,30 @@ ssh -t admin@192.168.122.51 \
 **Schlüssel des Runners zurückziehen:** Eintrag aus `.sops.yaml` löschen und `sops updatekeys` wie oben.
 Das sperrt ihn nur für künftige Stände: Alte Commits kann er weiter entschlüsseln, und die Werte kannte er
 schon. Nach einem Vorfall deshalb zusätzlich die Secrets selbst erneuern (Abschnitt 9, Werte ändern).
+
+### Runner registrieren
+
+Wie auf der Compose-VM, Schritt für Schritt in [vm.md, Abschnitt 5](vm.md#5-runner-registrieren)
+(a bis d, samt Stolpersteinen). Nur Name und Label sind anders. Auf GitHub: Repo → *Settings → Actions →
+Runners → New self-hosted runner*, Linux, x64.
+
+In der VM als `runner` (`sudo -iu runner`), herunterladen wie dort beschrieben, dann:
+
+```bash
+./config.sh --url https://github.com/dying-surfer/cloudpoc --token <TOKEN> \
+  --name cloudpoc-k3s --labels k3s --unattended
+exit
+```
+
+Als `admin` den Dienst einrichten:
+
+```bash
+sudo bash -c 'cd /home/runner/actions-runner && ./svc.sh install runner && ./svc.sh start'
+sudo systemctl status 'actions.runner.*'     # active (running)
+```
+
+Auf GitHub erscheint er als *Idle* mit den Labels `self-hosted`, `Linux`, `X64`, `k3s`. Das Label trennt
+ihn vom Runner der Compose-VM (`vm`): Jeder Workflow wählt per `runs-on` genau einen der beiden.
+
+Für die Absicherung gilt dasselbe wie dort (öffentliches Repo): Der Runner läuft nur für den
+Deploy-Workflow, nie bei `pull_request`.
