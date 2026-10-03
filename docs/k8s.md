@@ -1001,3 +1001,83 @@ SHA rollt auch das alte Chart und die alten Secrets aus. Ein Rollback ist damit 
 (die Datenbank bleibt, wie sie ist: Migrationen laufen nicht rückwärts, siehe expand/contract in Abschnitt 8).
 
 Logs des Laufs stehen auf GitHub, die des Runners in der VM: `sudo journalctl -u 'actions.runner.*' -e`.
+
+## 12. Backup und Point-in-Time-Recovery
+
+### Was gesichert wird
+
+Ein Dump (`pg_dump`, wie in M6) ist ein Foto: Alles, was danach passiert, fehlt beim Restore. Für eine
+Wiederherstellung auf einen beliebigen Zeitpunkt (**Point-in-Time-Recovery**, PITR) sichert CNPG zwei Dinge:
+
+| Teil             | Inhalt                                                        | Wann                          |
+|------------------|---------------------------------------------------------------|-------------------------------|
+| **Basis-Backup** | vollständige Kopie des Datenverzeichnisses                    | nach Zeitplan, z. B. nachts   |
+| **WAL-Archiv**   | das Änderungsprotokoll von Postgres (Write-Ahead Log), Datei für Datei | laufend, spätestens alle 5 Minuten |
+
+Beim Wiederherstellen spielt Postgres das letzte Basis-Backup vor dem Zielzeitpunkt ein und danach die
+WAL-Dateien bis genau dorthin. Ohne WAL-Archiv gäbe es nur die Stände der Basis-Backups.
+
+Beides muss außerhalb des DB-Pods liegen. CNPG schreibt dafür in einen **Objektspeicher** (S3): Dateien
+werden per HTTP unter einem Namen in einem *Bucket* abgelegt, Zugang per Schlüsselpaar. In Produktion ist
+das ein Bucket bei einem Anbieter; hier läuft ein S3-kompatibler Server (RustFS) im Cluster, als Ersatz
+zum Testen. Die Backups liegen damit auf **derselben VM** wie die Datenbank: gut genug, um Backup und
+Recovery zu üben, aber kein Schutz gegen den Verlust der VM (Offsite-Backup: ROADMAP M9).
+
+### Die Bausteine
+
+| Baustein                | Aufgabe                                                                  | Namespace      |
+|-------------------------|--------------------------------------------------------------------------|----------------|
+| CNPG-Operator           | wie bisher (Abschnitt 4)                                                 | `cnpg-system`  |
+| **Barman-Cloud-Plugin** | macht Basis-Backups, archiviert WAL, holt beides beim Restore zurück     | `cnpg-system`  |
+| **cert-manager**        | stellt die TLS-Zertifikate aus, mit denen Operator und Plugin sich gegenseitig ausweisen | `cert-manager` |
+| S3-Server (RustFS)      | nimmt die Dateien entgegen                                               | eigener        |
+
+Barman ist das Backup-Werkzeug für Postgres, das dahinter arbeitet. Früher war es fest im Operator
+eingebaut (`spec.backup.barmanObjectStore`); seit CNPG 1.26 ist das abgekündigt, der Nachfolger ist das
+Plugin. Es läuft einmal als Deployment in `cnpg-system` und zusätzlich als **Sidecar** (zweiter Container)
+in jedem Postgres-Pod, der Backups machen soll.
+
+### cert-manager installieren
+
+Einmal pro Cluster, auf dem Host mit der Admin-kubeconfig:
+
+```bash
+export KUBECONFIG=~/.kube/cloudpoc-k3s.yaml
+helm upgrade --install cert-manager oci://quay.io/jetstack/charts/cert-manager \
+  --namespace cert-manager --create-namespace \
+  --version v1.21.2 --set crds.enabled=true --wait
+```
+
+- `oci://…`: Das Chart liegt wie ein Image in einer Registry, ein `helm repo add` entfällt.
+- `crds.enabled=true`: Das Chart bringt die Ressourcentypen (`Certificate`, `Issuer`, …) nur auf Wunsch mit.
+
+Prüfen:
+
+```bash
+kubectl get pods -n cert-manager                    # cert-manager, -cainjector, -webhook: je 1/1 Running
+kubectl get crd | grep cert-manager.io              # certificates…, issuers…, clusterissuers…, …
+```
+
+Getestet mit v1.21.2 (Oktober 2026). cert-manager brauchen wir später ohnehin für TLS (ROADMAP M9).
+
+### Barman-Cloud-Plugin installieren
+
+Muss im selben Namespace wie der Operator liegen:
+
+```bash
+helm repo update cnpg
+helm upgrade --install plugin-barman-cloud cnpg/plugin-barman-cloud \
+  --namespace cnpg-system \
+  --version 0.8.1 --wait
+```
+
+Prüfen:
+
+```bash
+kubectl get pods -n cnpg-system                     # zusätzlich plugin-barman-cloud-…   1/1 Running
+kubectl get certificate -n cnpg-system              # barman-cloud-client, -server: READY True
+kubectl get crd | grep barmancloud                  # objectstores.barmancloud.cnpg.io
+```
+
+Getestet mit Chart 0.8.1 = Plugin v0.15.1 (Oktober 2026). An den bestehenden Datenbanken ändert sich
+dadurch noch nichts: Das Plugin wird erst aktiv, wenn ein `Cluster` es in `spec.plugins` nennt.
