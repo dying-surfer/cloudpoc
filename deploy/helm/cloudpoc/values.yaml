@@ -92,6 +92,15 @@ db:
       schedule: "0 0 2 * * *"
       # So weit zurück bleibt eine Wiederherstellung möglich (d, w oder m)
       retentionPolicy: 14d
+    # Neuen Cluster aus den Backups einer anderen Umgebung aufbauen, statt leer zu starten.
+    # Nur beim ersten Install eines Namespace wirksam. Bucket, endpointURL und Secret
+    # kommen aus backup.* (auch wenn backup.enabled aus ist).
+    recovery:
+      enabled: false
+      # Namespace, dessen Backups eingespielt werden (Ordner im Bucket)
+      sourceNamespace: ""
+      # Zielzeitpunkt mit Zeitzone, z. B. "2026-10-03T11:45:00Z". Leer = so aktuell wie möglich.
+      targetTime: ""
   external:
     # Secret mit dem Schlüssel DATABASE_URL (Doctrine-Format inkl. serverVersion)
     existingSecret: ""

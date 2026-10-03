@@ -114,7 +114,7 @@ Aufruf: include "cloudpoc.dbBackupPath" (dict "ctx" $ "namespace" .Release.Names
 {{- end -}}
 
 {{/*
-Zugang zum Objektspeicher, gleich für Backup und (später) Recovery.
+Zugang zum Objektspeicher, gleich für Backup und Recovery.
 endpointURL nur für S3-kompatible Server; ohne ist es AWS S3.
 */}}
 {{- define "cloudpoc.dbObjectStoreAccess" -}}

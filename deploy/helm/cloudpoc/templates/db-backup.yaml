@@ -50,3 +50,23 @@ spec:
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
 {{- end }}
+{{- if and (eq .Values.db.mode "cnpg") .Values.db.cnpg.recovery.enabled }}
+---
+# Quelle der Wiederherstellung: das Archiv der Umgebung, aus der die Daten kommen.
+# Der neue Cluster liest hier nur; seine eigenen Backups gehen in den ObjectStore oben.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ include "cloudpoc.dbObjectStore" . }}-source
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db
+spec:
+  configuration:
+    destinationPath: {{ include "cloudpoc.dbBackupPath" (dict "ctx" $ "namespace" (required "db.cnpg.recovery.sourceNamespace fehlt" .Values.db.cnpg.recovery.sourceNamespace)) }}
+    {{- include "cloudpoc.dbObjectStoreAccess" . | trim | nindent 4 }}
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+{{- end }}
