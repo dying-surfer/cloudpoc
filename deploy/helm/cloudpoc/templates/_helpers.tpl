@@ -98,3 +98,34 @@ preStop:
   sleep:
     seconds: {{ .Values.preStopSleepSeconds }}
 {{- end -}}
+
+{{/* Name des ObjectStore (Ziel der Backups) dieses Clusters */}}
+{{- define "cloudpoc.dbObjectStore" -}}
+{{ include "cloudpoc.dbCluster" . }}-backup
+{{- end -}}
+
+{{/*
+Ort der Backups eines Namespace im Bucket: s3://<bucket>/<namespace>. Der Cluster heißt
+in jeder Umgebung gleich, erst der Namespace im Pfad trennt die Umgebungen.
+Aufruf: include "cloudpoc.dbBackupPath" (dict "ctx" $ "namespace" .Release.Namespace)
+*/}}
+{{- define "cloudpoc.dbBackupPath" -}}
+{{- printf "s3://%s/%s" (required "db.cnpg.backup.bucket fehlt" .ctx.Values.db.cnpg.backup.bucket) .namespace -}}
+{{- end -}}
+
+{{/*
+Zugang zum Objektspeicher, gleich für Backup und (später) Recovery.
+endpointURL nur für S3-kompatible Server; ohne ist es AWS S3.
+*/}}
+{{- define "cloudpoc.dbObjectStoreAccess" -}}
+{{- with .Values.db.cnpg.backup.endpointURL }}
+endpointURL: {{ . }}
+{{- end }}
+s3Credentials:
+  accessKeyId:
+    name: {{ required "db.cnpg.backup.existingSecret fehlt" .Values.db.cnpg.backup.existingSecret }}
+    key: ACCESS_KEY_ID
+  secretAccessKey:
+    name: {{ .Values.db.cnpg.backup.existingSecret }}
+    key: ACCESS_SECRET_KEY
+{{- end -}}

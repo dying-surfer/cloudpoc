@@ -22,6 +22,15 @@ spec:
       owner: app
   storage:
     size: {{ .Values.db.cnpg.size }}
+  {{- if .Values.db.cnpg.backup.enabled }}
+  # Backup-Plugin einschalten (templates/db-backup.yaml): Der Operator setzt dafür einen
+  # zweiten Container in den Postgres-Pod. Ein- und Ausschalten startet den Pod neu.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ include "cloudpoc.dbObjectStore" . }}
+  {{- end }}
 {{- else if ne .Values.db.mode "external" }}
 {{- fail (printf "db.mode muss cnpg oder external sein, nicht %q" .Values.db.mode) }}
 {{- end }}

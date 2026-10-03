@@ -641,6 +641,7 @@ Die vorletzte Angabe ist der Pod, an den Traefik den Request geschickt hat, die 
 | `cloudpoc-db-app`  | DB-Passwort (User `app`)     | CNPG-Operator, zufällig beim ersten Start | Operator (nicht im Repo)       |
 | `cloudpoc-backend` | `APP_SECRET` (Symfony)       | von uns erzeugt (`openssl rand`)          | SOPS, `deploy/secrets/<ns>/`   |
 | `ghcr-pull`        | Token zum Image-Pull (GHCR)  | GitHub, Token (classic) `read:packages`   | SOPS, `deploy/secrets/<ns>/`   |
+| `cloudpoc-s3`      | Zugang zum S3-Speicher für Backups | Schlüsselpaar des Speichers (Abschnitt 12) | SOPS, `deploy/secrets/<ns>/` |
 
 Das DB-Passwort braucht kein SOPS: Niemand außerhalb des Clusters muss es vorher kennen. Der
 Operator erzeugt es, legt damit die Rolle `app` an und schreibt es ins Secret. Das Backend-Deployment
@@ -811,7 +812,7 @@ Legt im Namespace `cloudpoc-staging` an: ServiceAccount, Role, RoleBinding (alle
 `deployer-token` mit einem Token ohne Ablaufdatum.
 
 Was die Role erlaubt: die Ressourcen des Charts verwalten (Deployments, Services, ConfigMaps, Ingress,
-Jobs, HPA, PDB, CNPG-Cluster), Secrets verwalten, Pods und ReplicaSets nur lesen.
+Jobs, HPA, PDB, CNPG-Cluster samt Backup-Zeitplan und ObjectStore), Secrets verwalten, Pods und ReplicaSets nur lesen.
 
 Was das **nicht** verhindert: Der `deployer` kann alle Secrets in `cloudpoc-staging` lesen (auch das DB-Passwort)
 und dort beliebige Pods starten. Das geht nicht enger, denn Helm speichert seine Releases selbst als
@@ -1131,3 +1132,83 @@ Schreiben an.
 Das StatefulSet ist bewusst schlicht: ein Pod, ein Volume, kein TLS, und die Datenbanken nutzen später
 den Root-Zugang. Bei einem echten Anbieter bekäme jede Umgebung einen eigenen Schlüssel, der nur an
 ihren Bucket darf.
+
+### Backup im Chart einschalten
+
+Das Chart legt mit `db.cnpg.backup.enabled: true` zwei weitere Objekte an (`templates/db-backup.yaml`)
+und ergänzt den `Cluster`:
+
+| Objekt                          | Aufgabe                                                                    |
+|---------------------------------|----------------------------------------------------------------------------|
+| `ObjectStore` `cloudpoc-db-backup` | Ziel: Bucket, Adresse, Zugang, Aufbewahrung (`retentionPolicy`, 14 Tage) |
+| `Cluster` → `spec.plugins`      | schaltet das Plugin ein; ab dann archiviert Postgres laufend seine WAL-Dateien |
+| `ScheduledBackup` `cloudpoc-db` | Basis-Backup nach Zeitplan (täglich 02:00 UTC) und eines sofort beim Anlegen |
+
+Die Dateien landen unter `s3://<bucket>/<namespace>/cloudpoc-db/`. Der Namespace im Pfad ist nötig, weil
+der Cluster in jeder Umgebung `cloudpoc-db` heißt; ohne ihn würden zwei Umgebungen ins selbe Archiv
+schreiben. Bucket und Adresse stehen pro Umgebung in `deploy/helm/values/<namespace>.yaml`.
+
+**1. Zugang als Secret.** Der Namespace braucht ein Secret `cloudpoc-s3` mit `ACCESS_KEY_ID` und
+`ACCESS_SECRET_KEY`. Hier sind es dieselben Werte wie der Root-Zugang von RustFS:
+
+```bash
+kubectl create secret generic cloudpoc-s3 -n cloudpoc-staging \
+  --from-literal=ACCESS_KEY_ID="$(sops -d --extract '["data"]["RUSTFS_ACCESS_KEY"]' deploy/secrets/rustfs/rustfs.sops.yaml | base64 -d)" \
+  --from-literal=ACCESS_SECRET_KEY="$(sops -d --extract '["data"]["RUSTFS_SECRET_KEY"]' deploy/secrets/rustfs/rustfs.sops.yaml | base64 -d)" \
+  --dry-run=client -o yaml > deploy/secrets/cloudpoc-staging/cloudpoc-s3.sops.yaml
+sops -e -i deploy/secrets/cloudpoc-staging/cloudpoc-s3.sops.yaml
+make secrets-check
+```
+
+**2. Rechte für den `deployer`.** Er darf jetzt auch `ScheduledBackup`, `Backup` und `ObjectStore`
+verwalten (sonst scheitert der Deploy-Workflow an den neuen Objekten):
+
+```bash
+kubectl apply -f deploy/k3s/deployer-cloudpoc-staging.yaml
+```
+
+**3. Ausrollen.** Mit dem Image, das gerade läuft, damit sich nur das Chart ändert:
+
+```bash
+make k8s-deploy NS=cloudpoc-staging TAG=$(helm get values cloudpoc -n cloudpoc-staging -o json | jq -r .image.tag)
+```
+
+Der Operator baut den Postgres-Pod dabei **neu** (er bekommt den Sidecar des Plugins). Mit nur einer
+Instanz ist die Datenbank dafür kurz weg, das Backend antwortet so lange mit Fehlern. Bei mehreren
+Instanzen würde der Operator reihum neu starten und vorher auf ein Standby umschalten.
+
+**4. Prüfen:**
+
+```bash
+kubectl get pods -n cloudpoc-staging                # cloudpoc-db-1 jetzt 2/2 (Postgres + Sidecar)
+kubectl get objectstore,scheduledbackup,backup -n cloudpoc-staging
+# backup …   PHASE completed  (das sofortige erste Basis-Backup)
+
+# Läuft die WAL-Archivierung? status True, reason ContinuousArchivingSuccess
+kubectl get cluster cloudpoc-db -n cloudpoc-staging \
+  -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")]}'; echo
+
+# Bei Problemen: Logs des Sidecars
+kubectl logs -n cloudpoc-staging cloudpoc-db-1 -c plugin-barman-cloud | tail
+```
+
+In der Oberfläche von RustFS (`port-forward`, siehe oben) liegt jetzt der Bucket `cloudpoc-backups`,
+darin `cloudpoc-staging/cloudpoc-db/base/` (Basis-Backups) und `…/wals/` (WAL-Dateien).
+
+**Backup von Hand** (z. B. vor einer heiklen Migration):
+
+```bash
+kubectl create -n cloudpoc-staging -f - <<EOT
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  generateName: cloudpoc-db-manual-
+spec:
+  cluster:
+    name: cloudpoc-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+EOT
+kubectl get backups -n cloudpoc-staging -w          # bis PHASE completed (Strg+C)
+```

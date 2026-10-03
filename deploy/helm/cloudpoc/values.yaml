@@ -78,6 +78,20 @@ db:
     instances: 1
     image: ghcr.io/cloudnative-pg/postgresql:17
     size: 1Gi
+    # Backup und Point-in-Time-Recovery in einen S3-Speicher (docs/k8s.md, Abschnitt 12).
+    # Voraussetzung im Cluster: Barman-Cloud-Plugin (und cert-manager).
+    backup:
+      enabled: false
+      # Bucket; die Dateien liegen darin unter <namespace>/<cluster>/
+      bucket: ""
+      # Nur für S3-kompatible Server (z. B. http://rustfs.rustfs.svc:9000), leer = AWS S3
+      endpointURL: ""
+      # Secret im Namespace mit den Schlüsseln ACCESS_KEY_ID und ACCESS_SECRET_KEY
+      existingSecret: cloudpoc-s3
+      # Basis-Backup täglich um 02:00 UTC. Sechs Felder: Sekunde Minute Stunde Tag Monat Wochentag
+      schedule: "0 0 2 * * *"
+      # So weit zurück bleibt eine Wiederherstellung möglich (d, w oder m)
+      retentionPolicy: 14d
   external:
     # Secret mit dem Schlüssel DATABASE_URL (Doctrine-Format inkl. serverVersion)
     existingSecret: ""

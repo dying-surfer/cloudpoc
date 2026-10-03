@@ -1,0 +1,52 @@
+{{- if and (eq .Values.db.mode "cnpg") .Values.db.cnpg.backup.enabled }}
+# Backup und Point-in-Time-Recovery (docs/k8s.md, Abschnitt 12). Braucht im Cluster das
+# Barman-Cloud-Plugin und im Namespace das Secret mit dem Zugang zum Objektspeicher.
+#
+# ObjectStore: wohin gesichert wird. Der Cluster verweist in spec.plugins darauf und
+# archiviert ab dann laufend seine WAL-Dateien dorthin.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ include "cloudpoc.dbObjectStore" . }}
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db
+  annotations:
+    # Bleibt wie der Cluster bei helm uninstall stehen: Ohne ObjectStore könnte die
+    # weiterlaufende DB ihre WAL-Dateien nicht mehr loswerden.
+    helm.sh/resource-policy: keep
+spec:
+  configuration:
+    destinationPath: {{ include "cloudpoc.dbBackupPath" (dict "ctx" $ "namespace" .Release.Namespace) }}
+    {{- include "cloudpoc.dbObjectStoreAccess" . | trim | nindent 4 }}
+    wal:
+      compression: gzip
+    data:
+      compression: gzip
+  # Wie weit zurück eine Wiederherstellung möglich bleibt. Ältere Basis-Backups und
+  # WAL-Dateien löscht das Plugin nach dem nächsten erfolgreichen Backup.
+  retentionPolicy: {{ .Values.db.cnpg.backup.retentionPolicy | quote }}
+---
+# Basis-Backups nach Zeitplan. Jeder Lauf erzeugt ein Objekt vom Typ Backup
+# (kubectl get backups), das Ergebnis und Zeitpunkt festhält.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ include "cloudpoc.dbCluster" . }}
+  labels:
+    {{- include "cloudpoc.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db
+spec:
+  # Sechs Felder, das erste sind Sekunden (anders als bei crontab)
+  schedule: {{ .Values.db.cnpg.backup.schedule | quote }}
+  # Gleich beim Anlegen ein erstes Backup: Ohne Basis-Backup nützt das WAL-Archiv nichts
+  immediate: true
+  # Die Backup-Objekte gehören diesem Zeitplan und verschwinden mit ihm
+  # (nur die Objekte im Cluster, nicht die Dateien im Bucket)
+  backupOwnerReference: self
+  cluster:
+    name: {{ include "cloudpoc.dbCluster" . }}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+{{- end }}

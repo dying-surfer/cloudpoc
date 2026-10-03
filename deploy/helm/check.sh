@@ -25,7 +25,7 @@ check() {
 }
 
 check "Standard (staging)"
-check "Prod" -f "$CHART/values-prod.yaml"
+check "Prod" -f "$CHART/values-prod.yaml" --set db.cnpg.backup.bucket=cloudpoc-backups
 check "Recreate" --set strategy=Recreate
 check "Externe DB" --set db.mode=external --set db.external.existingSecret=cloudpoc-db
 
@@ -38,6 +38,14 @@ done
 echo "== Ohne image.tag"
 if helm template cloudpoc "$CHART" > /dev/null 2>&1; then
   echo "FEHLER: helm template ohne image.tag läuft durch" >&2
+  exit 1
+fi
+echo "bricht wie gewollt ab"
+
+# Backup eingeschaltet, aber kein Bucket: muss abbrechen
+echo "== Backup ohne Bucket"
+if helm template cloudpoc "$CHART" --set image.tag="$TAG" --set db.cnpg.backup.enabled=true > /dev/null 2>&1; then
+  echo "FEHLER: helm template mit Backup ohne Bucket läuft durch" >&2
   exit 1
 fi
 echo "bricht wie gewollt ab"
