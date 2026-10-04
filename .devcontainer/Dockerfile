@@ -1,8 +1,10 @@
+# Node LTS als benanntes Build-Stage: COPY --from unterstützt hier kein ARG im Image-Tag.
+FROM docker.io/library/node:24-slim AS node
+
 # Entwicklungs-Image für den Service "workspace".
 # Enthält alle Werkzeuge für Backend und Frontend – NICHT das Prod-Image (das kommt in M4).
 FROM php:8.4-cli
 
-ARG NODE_MAJOR=24
 ARG USERNAME=dev
 ARG USER_UID=1000
 ARG USER_GID=1000
@@ -29,8 +31,8 @@ COPY --from=docker.io/library/composer:2 /usr/bin/composer /usr/local/bin/compos
 COPY --from=ghcr.io/symfony-cli/symfony-cli:latest /usr/local/bin/symfony /usr/local/bin/symfony
 
 # Node LTS aus dem offiziellen Node-Image übernehmen
-COPY --from=docker.io/library/node:${NODE_MAJOR}-slim /usr/local/bin/node /usr/local/bin/node
-COPY --from=docker.io/library/node:${NODE_MAJOR}-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
