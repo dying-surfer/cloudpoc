@@ -5,7 +5,7 @@
 # die statischen Dateien und ein nginx, der als non-root auf Port 8080 läuft.
 
 # --- build: Angular bauen -------------------------------------------------------
-FROM docker.io/library/node:24-slim AS build
+FROM docker.io/library/node:26-slim AS build
 
 WORKDIR /app
 
