@@ -138,7 +138,7 @@ jobs:
           tags: |
             type=sha,format=long,prefix=
             type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.component }}
           push: true
