@@ -40,7 +40,7 @@ jobs:
       KUBECONFIG: /home/runner/.kube/cloudpoc-staging.yaml
       SOPS_AGE_KEY_FILE: /home/runner/.config/sops/age/keys.txt
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
       # Branch oder Tag auf den Commit-SHA auflösen, der ist der Image-Tag
